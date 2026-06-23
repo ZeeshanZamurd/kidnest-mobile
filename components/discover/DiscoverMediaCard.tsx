@@ -12,6 +12,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { formatDuration, type BrowseVideo } from '../../api/browse';
 import { radius, spacing, typography } from '../../theme/colors';
+import AssignActionButton, { type AssignButtonState } from './AssignActionButton';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD = spacing.lg;
@@ -26,7 +27,10 @@ type Props = {
   onPress: () => void;
   onChannelPress?: () => void;
   onAdd?: () => void;
+  assignState?: AssignButtonState;
   layout?: Layout;
+  /** @deprecated use layout */
+  variant?: 'grid' | 'list';
 };
 
 export default function DiscoverMediaCard({
@@ -34,10 +38,12 @@ export default function DiscoverMediaCard({
   onPress,
   onChannelPress,
   onAdd,
+  assignState = 'idle',
   layout = 'video',
+  variant,
 }: Props) {
   const { colors } = useTheme();
-  const isShort = layout === 'short';
+  const isShort = layout === 'short' || variant === 'grid';
 
   if (isShort) {
     return (
@@ -75,9 +81,11 @@ export default function DiscoverMediaCard({
             </Text>
           </Pressable>
           {onAdd ? (
-            <Pressable onPress={onAdd} hitSlop={8}>
-              <Icon name="add-circle-outline" size={22} color={colors.primary} />
-            </Pressable>
+            <AssignActionButton
+              state={assignState}
+              onPress={onAdd}
+              variant="inline"
+            />
           ) : null}
         </View>
       </View>
@@ -121,13 +129,12 @@ export default function DiscoverMediaCard({
         ) : null}
       </Pressable>
       {onAdd ? (
-        <Pressable
-          style={[styles.addBtn, { borderColor: colors.primary }]}
+        <AssignActionButton
+          state={assignState}
           onPress={onAdd}
-        >
-          <Icon name="add-circle-outline" size={17} color={colors.primary} />
-          <Text style={[styles.addText, { color: colors.primary }]}>Add</Text>
-        </Pressable>
+          variant="full"
+          style={styles.addBtnSpacing}
+        />
       ) : null}
     </View>
   );
@@ -291,19 +298,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 5,
-    borderWidth: 1.5,
-    borderRadius: radius.lg,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  addBtnSpacing: {
     marginTop: 8,
-  },
-  addText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

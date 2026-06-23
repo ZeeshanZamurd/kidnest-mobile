@@ -314,7 +314,7 @@ export default function ParentDashboardScreen() {
               icon="person-add"
               label={t('add_child')}
               color={colors.primary}
-              onPress={() => navigation.navigate('ChildProfiles')}
+              onPress={() => navigation.navigate('AddChild')}
             />
             <QuickAction
               icon="add-circle"
@@ -327,6 +327,12 @@ export default function ParentDashboardScreen() {
               label="Add Channel"
               color={colors.accent}
               onPress={goDiscover}
+            />
+            <QuickAction
+              icon="analytics"
+              label={t('child_analytics')}
+              color={colors.success}
+              onPress={() => navigation.navigate('Analytics')}
             />
           </View>
         </Animated.View>
@@ -405,7 +411,7 @@ export default function ParentDashboardScreen() {
               <Pressable
                 onPress={() =>
                   setupStep === 0
-                    ? navigation.navigate('ChildProfiles')
+                    ? navigation.navigate('AddChild')
                     : goDiscover()
                 }
                 style={[styles.setupCta, { backgroundColor: colors.primary }]}
@@ -464,13 +470,13 @@ export default function ParentDashboardScreen() {
             <SectionHeader
               title={t('child_profiles')}
               actionLabel={t('add_child')}
-              onAction={() => navigation.navigate('ChildProfiles')}
+              onAction={() => navigation.navigate('AddChild')}
             />
             {children.slice(0, 3).map((child) => (
               <View key={child.id}>
                 <ChildProfileCard
                   child={child}
-                  onPress={() => navigation.navigate('ChildProfiles')}
+                  onPress={() => navigation.navigate('AddChild')}
                 />
                 {child.assignmentCount > 0 && (
                   <Text style={[styles.childMeta, { color: colors.textMuted }]}>

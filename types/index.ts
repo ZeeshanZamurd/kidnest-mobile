@@ -34,6 +34,8 @@ export interface Channel {
   category: ContentCategory;
 }
 
+export type ContentType = 'VIDEO' | 'SHORT';
+
 export interface Video {
   id: string;
   title: string;
@@ -43,6 +45,8 @@ export interface Video {
   channelId: string;
   channelName: string;
   category: ContentCategory;
+  contentType?: ContentType;
+  streamUrl?: string | null;
   status: ApprovalStatus;
   views: string;
   publishedAt: string;

@@ -2,12 +2,14 @@ export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   Auth: undefined;
-  RoleSelection: undefined;
+  ProfileSelection: undefined;
   ParentTabs: undefined;
   ChildTabs: undefined;
   VideoPlayer: { videoId: string };
   ChannelDetail: { channelId: string };
+  ChildChannelDetail: { channelId: string };
   AddVideo: undefined;
+  AddChild: undefined;
   ChildProfiles: undefined;
   WatchHistory: undefined;
   Favorites: undefined;
@@ -28,5 +30,6 @@ export type ParentTabParamList = {
 export type ChildTabParamList = {
   ChildHome: undefined;
   ChildFeed: undefined;
+  ChildHistory: undefined;
   ChildFavorites: undefined;
 };

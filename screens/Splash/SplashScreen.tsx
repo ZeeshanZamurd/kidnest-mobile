@@ -41,7 +41,7 @@ export default function SplashScreen({ authReady, onFinish }: Props) {
     <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
       <View style={styles.center}>
         <Animated.View style={logoStyle}>
-          <AppLogo size={168} />
+          <AppLogo size={168} shadow={false} />
         </Animated.View>
       </View>
     </LinearGradient>

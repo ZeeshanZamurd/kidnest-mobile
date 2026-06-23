@@ -2,6 +2,8 @@ import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
+import ProfileAvatar from './ProfileAvatar';
+import { isAvatarKey } from '../../constants/avatars';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { ChildProfile } from '../../types';
@@ -35,7 +37,11 @@ export default function ChildProfileCard({
         },
       ]}
     >
-      <Image source={{ uri: child.avatar }} style={styles.avatar} />
+      {isAvatarKey(child.avatar) ? (
+        <ProfileAvatar avatarKey={child.avatar} size={56} />
+      ) : (
+        <Image source={{ uri: child.avatar }} style={styles.avatar} />
+      )}
       <View style={styles.info}>
         <View style={styles.nameRow}>
           <Text style={[styles.name, { color: colors.text }]}>{child.name}</Text>

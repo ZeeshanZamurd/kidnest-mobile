@@ -4,11 +4,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import AuthScreen from '../screens/Auth/AuthScreen';
-import RoleSelectionScreen from '../screens/Auth/RoleSelectionScreen';
+import ProfileSelectionScreen from '../screens/Auth/ProfileSelectionScreen';
 import ParentTabNavigator from './ParentTabNavigator';
 import ChildTabNavigator from './ChildTabNavigator';
 import VideoPlayerScreen from '../screens/Shared/VideoPlayerScreen';
 import AddVideoScreen from '../screens/Parent/AddVideoScreen';
+import AddChildScreen from '../screens/Parent/AddChildScreen';
 import ChildProfilesScreen from '../screens/Parent/ChildProfilesScreen';
 import WatchHistoryScreen from '../screens/Shared/WatchHistoryScreen';
 import FavoritesScreen from '../screens/Shared/FavoritesScreen';
@@ -18,6 +19,7 @@ import SearchScreen from '../screens/Parent/SearchScreen';
 import ParentLibraryScreen from '../screens/Parent/ParentLibraryScreen';
 import SubscriptionScreen from '../screens/Parent/SubscriptionScreen';
 import ChannelDetailScreen from '../screens/Parent/ChannelDetailScreen';
+import ChildChannelDetailScreen from '../screens/Child/ChildChannelDetailScreen';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from './types';
 
@@ -48,7 +50,7 @@ export default function RootNavigator() {
     : !isAuthenticated || !parentSession
       ? 'Auth'
       : !role
-        ? 'RoleSelection'
+        ? 'ProfileSelection'
         : role === 'child'
           ? 'ChildTabs'
           : 'ParentTabs';
@@ -64,7 +66,7 @@ export default function RootNavigator() {
     >
       <Stack.Screen name="Onboarding" component={OnboardingRoute} />
       <Stack.Screen name="Auth" component={AuthScreen} />
-      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+      <Stack.Screen name="ProfileSelection" component={ProfileSelectionScreen} />
       <Stack.Screen name="ParentTabs" component={ParentTabNavigator} />
       <Stack.Screen name="ChildTabs" component={ChildTabNavigator} />
       <Stack.Screen
@@ -73,6 +75,7 @@ export default function RootNavigator() {
         options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
       />
       <Stack.Screen name="AddVideo" component={AddVideoScreen} options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="AddChild" component={AddChildScreen} options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="ChildProfiles" component={ChildProfilesScreen} />
       <Stack.Screen name="WatchHistory" component={WatchHistoryScreen} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
@@ -84,6 +87,11 @@ export default function RootNavigator() {
       <Stack.Screen
         name="ChannelDetail"
         component={ChannelDetailScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="ChildChannelDetail"
+        component={ChildChannelDetailScreen}
         options={{ animation: 'slide_from_right' }}
       />
     </Stack.Navigator>

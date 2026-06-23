@@ -9,7 +9,10 @@ export type AssignedVideo = {
     id: string;
     title: string;
     thumbnailUrl: string | null;
+    streamUrl?: string | null;
     durationSecs: number;
+    category?: string;
+    contentType?: 'VIDEO' | 'SHORT';
     channel: { id?: string; title: string };
   };
 };
@@ -36,6 +39,10 @@ export type ChildLibrary = {
 
 export async function fetchChildLibrary(childId: string) {
   return apiRequest<ChildLibrary>(`/assignments/child/${childId}`, 'GET');
+}
+
+export async function fetchChildFeed(childId: string) {
+  return apiRequest<AssignedVideo[]>(`/assignments/child/${childId}/feed`, 'GET');
 }
 
 export async function assignVideo(childId: string, videoId: string) {

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -34,9 +33,11 @@ import {
   type Category,
   type Language,
 } from '../../api/browse';
-import { assignChannel, assignVideo } from '../../api/assignments';
 import { fetchPlatformAccess } from '../../api/parent';
 import { useAppStore } from '../../store/useAppStore';
+import { useAssignToChild } from '../../hooks/useAssignToChild';
+import ChildProfilePickerModal from '../../components/profile/ChildProfilePickerModal';
+import SelectedChildBar from '../../components/profile/SelectedChildBar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -45,11 +46,22 @@ export default function ContentDiscoveryScreen() {
   const navigation = useNavigation<Nav>();
   const { top: safeTop } = useAppInsets();
   const listBottomPad = useTabScreenPadding();
-  const activeChildId = useAppStore((s) => s.activeChildId);
-  const apiChildren = useAppStore((s) => s.apiChildren);
   const platformAccess = useAppStore((s) => s.platformAccess);
   const setPlatformAccess = useAppStore((s) => s.setPlatformAccess);
   const parentSession = useAppStore((s) => s.parentSession);
+
+  const {
+    apiChildren,
+    activeChildId,
+    pickerVisible,
+    openPickerForSelect,
+    requestToggleVideo,
+    requestToggleChannel,
+    getVideoAssignState,
+    getChannelAssignState,
+    confirmChild,
+    closePicker,
+  } = useAssignToChild();
 
   const [tab, setTab] = useState<DiscoverTab>('videos');
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,8 +76,6 @@ export default function ContentDiscoveryScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-
-  const childId = activeChildId ?? apiChildren[0]?.id ?? null;
 
   const hasFullVideoAccess =
     platformAccess?.hasFullVideoAccess ?? platformAccess?.hasAccess ?? false;
@@ -165,34 +175,6 @@ export default function ContentDiscoveryScreen() {
     return () => clearTimeout(timer);
   }, [loadContent]);
 
-  const handleAddVideo = async (video: BrowseVideo) => {
-    if (!childId) {
-      Alert.alert('Select a child', 'Choose a child profile first.');
-      navigation.navigate('ParentLibrary');
-      return;
-    }
-    try {
-      await assignVideo(childId, video.id);
-      Alert.alert('Added', `"${video.title}" added for your child.`);
-    } catch (err) {
-      Alert.alert('Could not add', err instanceof Error ? err.message : 'Try again');
-    }
-  };
-
-  const handleAddChannel = async (channel: BrowseChannel) => {
-    if (!childId) {
-      Alert.alert('Select a child', 'Choose a child profile first.');
-      navigation.navigate('ParentLibrary');
-      return;
-    }
-    try {
-      await assignChannel(childId, channel.id);
-      Alert.alert('Added', `"${channel.title}" channel added for your child.`);
-    } catch (err) {
-      Alert.alert('Could not add', err instanceof Error ? err.message : 'Try again');
-    }
-  };
-
   const showChannelPaywall = tab === 'channels' && !canBrowseChannels;
   const isShortsGrid = tab === 'shorts';
 
@@ -200,6 +182,11 @@ export default function ContentDiscoveryScreen() {
     <>
       <View style={[styles.header, { paddingTop: safeTop + 8 }]}>
         <DiscoverHeroHeader />
+        <SelectedChildBar
+          children={apiChildren}
+          activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
+          onPress={openPickerForSelect}
+        />
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -278,7 +265,8 @@ export default function ContentDiscoveryScreen() {
               <DiscoverChannelCard
                 channel={item}
                 onPress={() => openChannel(item.id)}
-                onAdd={() => void handleAddChannel(item)}
+                onAdd={() => requestToggleChannel(item)}
+                assignState={getChannelAssignState(item.id)}
               />
             )}
             onEndReached={() => {
@@ -318,7 +306,8 @@ export default function ContentDiscoveryScreen() {
               layout={isShortsGrid ? 'short' : 'video'}
               onPress={() => openVideo(item.id)}
               onChannelPress={() => openChannel(item.channelId)}
-              onAdd={() => void handleAddVideo(item)}
+              onAdd={() => requestToggleVideo(item)}
+              assignState={getVideoAssignState(item.id, item.channelId)}
             />
           )}
           onEndReached={() => {
@@ -334,6 +323,12 @@ export default function ContentDiscoveryScreen() {
           }
         />
       )}
+      <ChildProfilePickerModal
+        visible={pickerVisible}
+        children={apiChildren}
+        onClose={closePicker}
+        onSelect={(id) => void confirmChild(id)}
+      />
     </GradientBackground>
   );
 }

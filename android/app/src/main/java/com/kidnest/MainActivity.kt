@@ -1,5 +1,7 @@
 package com.kidnest
 
+import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.core.view.WindowCompat
 import com.facebook.react.ReactActivity
@@ -13,6 +15,13 @@ class MainActivity : ReactActivity() {
     setTheme(R.style.AppTheme)
     super.onCreate(savedInstanceState)
     WindowCompat.setDecorFitsSystemWindows(window, false)
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    val intent = Intent("onConfigurationChanged")
+    intent.putExtra("newConfig", newConfig)
+    sendBroadcast(intent)
   }
 
   /**

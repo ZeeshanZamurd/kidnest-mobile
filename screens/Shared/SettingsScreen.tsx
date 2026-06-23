@@ -25,6 +25,7 @@ export default function SettingsScreen() {
   const { headerTop } = useAppInsets();
   const scrollBottomPad = useTabScreenPadding();
   const logout = useAppStore((s) => s.logout);
+  const exitProfileMode = useAppStore((s) => s.exitProfileMode);
   const autoplayEnabled = useAppStore((s) => s.autoplayEnabled);
   const setAutoplay = useAppStore((s) => s.setAutoplay);
   const [showLanguages, setShowLanguages] = useState(false);
@@ -37,6 +38,11 @@ export default function SettingsScreen() {
     }
     logout();
     navigation.reset({ index: 0, routes: [{ name: 'Auth' }] });
+  };
+
+  const handleSwitchProfile = () => {
+    exitProfileMode();
+    navigation.reset({ index: 0, routes: [{ name: 'ProfileSelection' }] });
   };
 
   const SettingRow = ({
@@ -110,6 +116,12 @@ export default function SettingsScreen() {
           icon="diamond-outline"
           label="Subscription & Premium"
           onPress={() => navigation.navigate('Subscription')}
+        />
+
+        <SettingRow
+          icon="people"
+          label={t('switch_profile')}
+          onPress={handleSwitchProfile}
         />
 
         <PrimaryButton label={t('logout')} variant="outline" onPress={handleLogout} style={styles.logout} />

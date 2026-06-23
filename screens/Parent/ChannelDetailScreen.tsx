@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Pressable,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -31,21 +31,33 @@ import {
   type BrowseVideo,
   type ChannelDetail,
 } from '../../api/browse';
-import { assignVideo } from '../../api/assignments';
-import { useAppStore } from '../../store/useAppStore';
+import { useAssignToChild } from '../../hooks/useAssignToChild';
+import AssignActionButton from '../../components/discover/AssignActionButton';
+import ChildProfilePickerModal from '../../components/profile/ChildProfilePickerModal';
+import SelectedChildBar from '../../components/profile/SelectedChildBar';
 
 type Route = RouteProp<RootStackParamList, 'ChannelDetail'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function ChannelDetailScreen() {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const { channelId } = route.params;
 
-  const activeChildId = useAppStore((s) => s.activeChildId);
-  const apiChildren = useAppStore((s) => s.apiChildren);
-  const childId = activeChildId ?? apiChildren[0]?.id ?? null;
+  const {
+    apiChildren,
+    activeChildId,
+    pickerVisible,
+    openPickerForSelect,
+    requestToggleVideo,
+    requestToggleChannel,
+    getVideoAssignState,
+    getChannelAssignState,
+    confirmChild,
+    closePicker,
+  } = useAssignToChild();
   const { headerTop } = useAppInsets();
   const listBottomPad = useStackScreenPadding();
 
@@ -88,18 +100,8 @@ export default function ChannelDetailScreen() {
     navigation.navigate('VideoPlayer', { videoId });
   };
 
-  const handleAdd = async (video: BrowseVideo) => {
-    if (!childId) {
-      Alert.alert('Select a child', 'Choose a child profile first.');
-      navigation.navigate('ParentLibrary');
-      return;
-    }
-    try {
-      await assignVideo(childId, video.id);
-      Alert.alert('Added', `"${video.title}" added for your child.`);
-    } catch (err) {
-      Alert.alert('Could not add', err instanceof Error ? err.message : 'Try again');
-    }
+  const handleToggleVideo = (video: BrowseVideo) => {
+    requestToggleVideo(video);
   };
 
   const showGrid = filter === 'SHORT' || (filter === 'ALL' && items.every((i) => i.contentType === 'SHORT'));
@@ -154,6 +156,19 @@ export default function ChannelDetailScreen() {
             {shortDescription(channel.description, 160)}
           </Text>
         ) : null}
+        <SelectedChildBar
+          children={apiChildren}
+          activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
+          onPress={openPickerForSelect}
+        />
+        <AssignActionButton
+          state={channel ? getChannelAssignState(channel.id) : 'idle'}
+          onPress={() => channel && requestToggleChannel(channel)}
+          variant="full"
+          label={t('add_channel_for_child')}
+          assignedLabel={t('channel_added')}
+          style={styles.addChannelBtn}
+        />
       </View>
 
       <ContentTypeSegment value={filter} onChange={setFilter} />
@@ -187,11 +202,18 @@ export default function ChannelDetailScreen() {
               item={item}
               variant={showGrid ? 'grid' : 'list'}
               onPress={() => openVideo(item.id)}
-              onAdd={() => void handleAdd(item)}
+              onAdd={() => handleToggleVideo(item)}
+              assignState={getVideoAssignState(item.id, item.channelId)}
             />
           )}
         />
       )}
+      <ChildProfilePickerModal
+        visible={pickerVisible}
+        children={apiChildren}
+        onClose={closePicker}
+        onSelect={(id) => void confirmChild(id)}
+      />
     </GradientBackground>
   );
 }
@@ -249,6 +271,10 @@ const styles = StyleSheet.create({
     ...typography.caption,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  addChannelBtn: {
+    marginTop: spacing.md,
+    alignSelf: 'stretch',
   },
   list: {
     paddingHorizontal: spacing.lg,

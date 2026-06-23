@@ -24,9 +24,9 @@ export const MOCK_PARENT: ParentUser = {
 export const MOCK_CHILDREN: ChildProfile[] = [
   {
     id: 'child-1',
-    name: 'Emma',
+    name: 'Ahmed',
     age: 6,
-    avatar: img('child-emma', 200, 200),
+    avatar: 'lion',
     interests: ['science', 'stories', 'art'],
     screenTimeMinutes: 42,
     dailyLimitMinutes: 60,
@@ -36,9 +36,9 @@ export const MOCK_CHILDREN: ChildProfile[] = [
   },
   {
     id: 'child-2',
-    name: 'Noah',
+    name: 'Fatima',
     age: 9,
-    avatar: img('child-noah', 200, 200),
+    avatar: 'panda',
     interests: ['coding', 'math', 'nature'],
     screenTimeMinutes: 28,
     dailyLimitMinutes: 90,
@@ -48,9 +48,9 @@ export const MOCK_CHILDREN: ChildProfile[] = [
   },
   {
     id: 'child-3',
-    name: 'Lily',
+    name: 'Ali',
     age: 4,
-    avatar: img('child-lily', 200, 200),
+    avatar: 'fox',
     interests: ['music', 'art', 'stories'],
     screenTimeMinutes: 15,
     dailyLimitMinutes: 45,

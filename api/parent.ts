@@ -26,6 +26,22 @@ export type ParentChild = {
   _count?: { assignments: number };
 };
 
+export type CreateChildPayload = {
+  displayName: string;
+  email: string;
+  password: string;
+  age: number;
+  dailyLimitMins?: number;
+};
+
+export type CreatedChildResponse = {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  age: number;
+};
+
 export type ParentDashboard = {
   parent: {
     id: string;
@@ -55,6 +71,19 @@ export async function fetchParentDashboard() {
 
 export async function fetchParentChildren() {
   return apiRequest<ParentChild[]>('/parents/children', 'GET');
+}
+
+export async function createParentChild(payload: CreateChildPayload) {
+  return apiRequest<CreatedChildResponse>('/parents/children', 'POST', {
+    body: payload as unknown as Record<string, unknown>,
+  });
+}
+
+export async function toggleChildPauseApi(childId: string) {
+  return apiRequest<{ id: string; isPaused: boolean }>(
+    `/parents/children/${childId}/pause`,
+    'PATCH',
+  );
 }
 
 export async function fetchPlatformAccess() {

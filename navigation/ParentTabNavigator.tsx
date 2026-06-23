@@ -16,9 +16,12 @@ import type { ParentTabParamList } from './types';
 const Tab = createBottomTabNavigator<ParentTabParamList>();
 
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(focused ? 1.15 : 1) }],
-  }));
+  const style = useAnimatedStyle(
+    () => ({
+      transform: [{ scale: withSpring(focused ? 1.15 : 1) }],
+    }),
+    [focused],
+  );
 
   return (
     <Animated.View style={style}>

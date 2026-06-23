@@ -59,7 +59,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           {SLIDES.map((slide, index) => (
             <View key={slide.titleKey} style={styles.slide}>
               {index === 0 ? (
-                <AppLogo size={120} />
+                <AppLogo size={120} shadow={false} />
               ) : (
                 <View style={[styles.iconWrap, { backgroundColor: colors.primary + '20' }]}>
                   <Icon name={slide.icon} size={56} color={colors.primary} />

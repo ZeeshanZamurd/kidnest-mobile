@@ -19,8 +19,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppInsets } from '../../hooks/useAppInsets';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
+import PinInputField from '../../components/auth/PinInputField';
 import { loginParent, signUpParent } from '../../services/authService';
 import { setApiAuthToken } from '../../api/client';
+import { isValidPin, saveParentPin } from '../../services/parentPinStorage';
 import { useAppStore } from '../../store/useAppStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Auth'>;
@@ -36,11 +38,29 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [confirmPinError, setConfirmPinError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     setError(null);
+    setPinError(null);
+    setConfirmPinError(null);
+
+    if (!isLogin) {
+      if (!isValidPin(pin)) {
+        setPinError(t('pin_invalid'));
+        return;
+      }
+      if (pin !== confirmPin) {
+        setConfirmPinError(t('pin_mismatch'));
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -54,15 +74,14 @@ export default function AuthScreen() {
       );
       setApiAuthToken(session.idToken);
 
-      if (isLogin) {
-        navigation.navigate('RoleSelection');
-      } else {
-        useAppStore.getState().login('parent');
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'ParentTabs' }],
-        });
+      if (!isLogin) {
+        await saveParentPin(session.backendUser.id, pin);
       }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'ProfileSelection' }],
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('auth_error_generic'));
     } finally {
@@ -73,6 +92,10 @@ export default function AuthScreen() {
   const toggleMode = () => {
     setIsLogin((prev) => !prev);
     setError(null);
+    setPin('');
+    setConfirmPin('');
+    setPinError(null);
+    setConfirmPinError(null);
   };
 
   return (
@@ -153,6 +176,25 @@ export default function AuthScreen() {
               ]}
             />
           </View>
+
+          {!isLogin && (
+            <>
+              <PinInputField
+                label={t('parent_pin_create')}
+                value={pin}
+                onChangeText={setPin}
+                error={pinError}
+                editable={!loading}
+              />
+              <PinInputField
+                label={t('parent_pin_confirm')}
+                value={confirmPin}
+                onChangeText={setConfirmPin}
+                error={confirmPinError}
+                editable={!loading}
+              />
+            </>
+          )}
 
           {error ? (
             <View style={[styles.errorBox, { backgroundColor: colors.danger + '18' }]}>

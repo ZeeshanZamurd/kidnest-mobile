@@ -6,6 +6,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import ChildHomeScreen from '../screens/Child/ChildHomeScreen';
 import VideoFeedScreen from '../screens/Child/VideoFeedScreen';
+import ChildWatchHistoryScreen from '../screens/Child/ChildWatchHistoryScreen';
 import FavoritesScreen from '../screens/Shared/FavoritesScreen';
 import { useTheme } from '../context/ThemeContext';
 import { useChildTabBarStyle } from './tabBarOptions';
@@ -14,9 +15,12 @@ import type { ChildTabParamList } from './types';
 const Tab = createBottomTabNavigator<ChildTabParamList>();
 
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(focused ? 1.2 : 1) }],
-  }));
+  const style = useAnimatedStyle(
+    () => ({
+      transform: [{ scale: withSpring(focused ? 1.2 : 1) }],
+    }),
+    [focused],
+  );
 
   return (
     <Animated.View style={style}>
@@ -58,6 +62,16 @@ export default function ChildTabNavigator() {
           tabBarLabel: t('feed'),
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="play" focused={focused} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="ChildHistory"
+        component={ChildWatchHistoryScreen}
+        options={{
+          tabBarLabel: t('history'),
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name="time" focused={focused} color={color} />
           ),
         }}
       />

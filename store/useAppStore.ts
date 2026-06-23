@@ -52,6 +52,7 @@ type AppState = {
   dismissSubscriptionPrompt: () => void;
   setApiChildren: (children: ParentChild[]) => void;
   login: (role: UserRole, childId?: string) => void;
+  exitProfileMode: () => void;
   logout: () => void;
 };
 
@@ -59,7 +60,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
   hasOnboarded: false,
   role: null,
-  activeChildId: MOCK_CHILDREN[0]?.id ?? null,
+  activeChildId: null,
   parentSession: null,
   platformAccess: null,
   subscriptionPromptDismissed: false,
@@ -151,7 +152,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       role,
       activeChildId: childId ?? get().activeChildId,
     });
-    void persistCurrentAuthMeta();
+  },
+
+  exitProfileMode: () => {
+    set({ role: null });
   },
 
   logout: () => {

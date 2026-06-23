@@ -1,5 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   Image,
@@ -19,12 +20,13 @@ import Animated, {
   withSequence,
   withSpring,
 } from 'react-native-reanimated';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { getApprovedVideos } from '../../data/mockData';
+import Video from 'react-native-video';
+import { useOptionalBottomTabBarHeight } from '../../hooks/useScreenPadding';
 import { useAppStore } from '../../store/useAppStore';
+import { useChildLibrary } from '../../hooks/useChildLibrary';
 import { spacing, typography } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
-import type { Video } from '../../types';
+import type { Video as VideoItem } from '../../types';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -35,7 +37,7 @@ function FeedItem({
   isActive,
   bottomClearance,
 }: {
-  item: Video;
+  item: VideoItem;
   isActive: boolean;
   bottomClearance: number;
 }) {
@@ -44,6 +46,24 @@ function FeedItem({
   const toggleFavorite = useAppStore((s) => s.toggleVideoFavorite);
   const heartScale = useSharedValue(1);
   const [showHeart, setShowHeart] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [hasDisplayedFrame, setHasDisplayedFrame] = useState(false);
+  const streamUri =
+    typeof item.streamUrl === 'string' && item.streamUrl.trim().length > 0
+      ? item.streamUrl.trim()
+      : null;
+  const canPlayInline = Boolean(streamUri);
+
+  useEffect(() => {
+    if (isActive) {
+      setPaused(false);
+    } else {
+      setPaused(true);
+      setHasDisplayedFrame(false);
+      setIsBuffering(false);
+    }
+  }, [isActive]);
 
   const heartStyle = useAnimatedStyle(() => ({
     transform: [{ scale: heartScale.value }],
@@ -61,22 +81,65 @@ function FeedItem({
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
       handleDoubleTap();
-    } else {
-      setTimeout(() => {
-        if (Date.now() - lastTapRef.current >= 300) {
-          navigation.navigate('VideoPlayer', { videoId: item.id });
-        }
-      }, 300);
+      return;
     }
+
+    setTimeout(() => {
+      if (Date.now() - lastTapRef.current < 300) return;
+      if (canPlayInline) {
+        setPaused((p) => !p);
+        return;
+      }
+      navigation.navigate('VideoPlayer', { videoId: item.id });
+    }, 300);
     lastTapRef.current = now;
   };
+
+  const showBuffering = isActive && canPlayInline && (!hasDisplayedFrame || isBuffering);
 
   return (
     <View style={styles.page}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onTap}>
-        <Image source={{ uri: item.thumbnail }} style={styles.fullImage} resizeMode="cover" />
+        {isActive && streamUri ? (
+          <Video
+            source={{ uri: streamUri }}
+            style={styles.fullImage}
+            resizeMode="cover"
+            paused={paused}
+            repeat
+            playInBackground={false}
+            playWhenInactive={false}
+            ignoreSilentSwitch="ignore"
+            onLoadStart={() => {
+              setHasDisplayedFrame(false);
+              setIsBuffering(true);
+            }}
+            onReadyForDisplay={() => {
+              setHasDisplayedFrame(true);
+            }}
+            onBuffer={(e) => {
+              setIsBuffering(e.isBuffering);
+            }}
+          />
+        ) : (
+          <Image source={{ uri: item.thumbnail }} style={styles.fullImage} resizeMode="cover" />
+        )}
         <View style={styles.overlay} />
       </Pressable>
+
+      {showBuffering && (
+        <View style={styles.bufferingOverlay} pointerEvents="none">
+          <ActivityIndicator color="#fff" size="large" />
+        </View>
+      )}
+
+      {paused && isActive && hasDisplayedFrame && !isBuffering && (
+        <View style={styles.playOverlay} pointerEvents="none">
+          <View style={styles.playCircle}>
+            <Icon name="play" size={36} color="#fff" />
+          </View>
+        </View>
+      )}
 
       {showHeart && (
         <Animated.View style={[styles.heartBurst, heartStyle]}>
@@ -84,30 +147,40 @@ function FeedItem({
         </Animated.View>
       )}
 
+      <View style={styles.shortBadge}>
+        <Icon name="flash" size={12} color="#fff" />
+        <Text style={styles.shortBadgeText}>Short</Text>
+      </View>
+
       <View style={[styles.sideActions, { bottom: bottomClearance + 56 }]}>
         <Pressable style={styles.actionBtn} onPress={() => toggleFavorite(item.id)}>
           <Icon name={item.isFavorite ? 'heart' : 'heart-outline'} size={28} color="#fff" />
         </Pressable>
-        <Pressable style={styles.actionBtn}>
-          <Icon name="bookmark-outline" size={28} color="#fff" />
-        </Pressable>
+        {!canPlayInline && (
+          <Pressable
+            style={styles.actionBtn}
+            onPress={() => navigation.navigate('VideoPlayer', { videoId: item.id })}
+          >
+            <Icon name="expand" size={24} color="#fff" />
+          </Pressable>
+        )}
       </View>
 
       <View style={[styles.bottomInfo, { paddingBottom: bottomClearance + spacing.lg }]}>
         <Text style={styles.feedTitle}>{item.title}</Text>
         <Text style={styles.feedChannel}>{item.channelName}</Text>
-        {isActive && (
-          <Text style={styles.hint}>{t('double_tap_like')}</Text>
-        )}
+        {isActive && <Text style={styles.hint}>{t('double_tap_like')}</Text>}
       </View>
     </View>
   );
 }
 
 export default function VideoFeedScreen() {
+  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
-  const videos = getApprovedVideos();
-  const tabBarHeight = useBottomTabBarHeight();
+  const activeChildId = useAppStore((s) => s.activeChildId);
+  const { shortVideos, loading } = useChildLibrary(activeChildId);
+  const tabBarHeight = useOptionalBottomTabBarHeight();
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -118,16 +191,34 @@ export default function VideoFeedScreen() {
   ).current;
 
   const renderItem = useCallback(
-    ({ item, index }: { item: Video; index: number }) => (
+    ({ item, index }: { item: VideoItem; index: number }) => (
       <FeedItem item={item} isActive={index === activeIndex} bottomClearance={tabBarHeight} />
     ),
     [activeIndex, tabBarHeight],
   );
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color="#fff" size="large" />
+      </View>
+    );
+  }
+
+  if (shortVideos.length === 0) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Icon name="flash-outline" size={48} color="rgba(255,255,255,0.35)" />
+        <Text style={styles.emptyTitle}>{t('no_shorts_assigned')}</Text>
+        <Text style={styles.emptyDesc}>{t('no_shorts_assigned_desc')}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={videos}
+        data={shortVideos}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         pagingEnabled
@@ -148,6 +239,9 @@ export default function VideoFeedScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
+  center: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
+  emptyTitle: { ...typography.h3, color: '#fff', textAlign: 'center' },
+  emptyDesc: { ...typography.body, color: 'rgba(255,255,255,0.65)', textAlign: 'center' },
   page: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
@@ -156,13 +250,45 @@ const styles = StyleSheet.create({
   fullImage: { ...StyleSheet.absoluteFillObject },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  bufferingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  playOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heartBurst: {
     position: 'absolute',
     alignSelf: 'center',
     top: '40%',
   },
+  shortBadge: {
+    position: 'absolute',
+    top: 56,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(236, 72, 153, 0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  shortBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   sideActions: {
     position: 'absolute',
     right: 16,

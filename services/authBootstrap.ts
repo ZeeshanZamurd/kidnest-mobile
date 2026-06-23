@@ -42,10 +42,6 @@ export async function restoreSessionFromFirebaseUser(firebaseUser: FirebaseUser)
   if (meta.hasOnboarded) {
     store.setOnboarded(true);
   }
-
-  if (meta.role) {
-    store.login(meta.role, meta.activeChildId ?? undefined);
-  }
 }
 
 export async function refreshIdToken(force = true): Promise<string | null> {
@@ -64,8 +60,8 @@ export async function refreshIdToken(force = true): Promise<string | null> {
 }
 
 export async function persistCurrentAuthMeta(): Promise<void> {
-  const { hasOnboarded, role, activeChildId } = useAppStore.getState();
-  await saveAuthMeta({ hasOnboarded, role, activeChildId });
+  const { hasOnboarded } = useAppStore.getState();
+  await saveAuthMeta({ hasOnboarded });
 }
 
 export async function handleAuthSignedOut(): Promise<void> {
