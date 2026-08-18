@@ -1,13 +1,31 @@
 import { getApiBaseUrl } from '../utils/resolveApiBaseUrl';
+import { CacheManager, buildCacheKey, type CachePolicy } from '../services/cache';
 
 export type ApiRequestError = Error & {
   status?: number;
   isNetworkError?: boolean;
+  fromCache?: boolean;
 };
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+export type ApiRequestOptions = {
+  body?: Record<string, unknown> | FormData;
+  params?: Record<string, string | number | boolean | undefined | null>;
+  headers?: Record<string, string>;
+  _retried?: boolean;
+  /** GET cache policy — stale-while-revalidate by default when set. */
+  cache?: CachePolicy;
+  cacheKey?: string;
+  signal?: AbortSignal;
+};
+
 let authToken: string | null = null;
+const inflightGet = new Map<string, Promise<unknown>>();
+
+export function getInflightRequestCount(): number {
+  return inflightGet.size;
+}
 
 export function setApiAuthToken(token: string | null): void {
   authToken = token;
@@ -31,12 +49,61 @@ function toApiError(raw: unknown, fallbackMessage: string): ApiRequestError {
 export async function apiRequest<T = unknown>(
   path: string,
   method: HttpMethod = 'GET',
-  options?: {
-    body?: Record<string, unknown> | FormData;
-    params?: Record<string, string | number | boolean | undefined | null>;
-    headers?: Record<string, string>;
-    _retried?: boolean;
-  },
+  options?: ApiRequestOptions,
+): Promise<T> {
+  if (method === 'GET' && options?.cache) {
+    return cachedGet<T>(path, options);
+  }
+  return executeRequest<T>(path, method, options);
+}
+
+async function cachedGet<T>(path: string, options: ApiRequestOptions): Promise<T> {
+  const policy = options.cache!;
+  const key =
+    options.cacheKey ??
+    buildCacheKey(path, options.params as Record<string, unknown> | undefined);
+
+  const cached = await CacheManager.get<T>(key, policy);
+  const stale = cached != null && CacheManager.isStale(cached, policy);
+
+  if (cached && !stale) {
+    return cached.data;
+  }
+
+  if (cached && policy.staleWhileRevalidate) {
+    void refreshCachedGet<T>(path, key, policy, options).catch(() => {});
+    return cached.data;
+  }
+
+  return refreshCachedGet<T>(path, key, policy, options);
+}
+
+async function refreshCachedGet<T>(
+  path: string,
+  key: string,
+  policy: CachePolicy,
+  options: ApiRequestOptions,
+): Promise<T> {
+  const existing = inflightGet.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const task = executeRequest<T>(path, 'GET', options)
+    .then(async (data) => {
+      await CacheManager.set(key, data, policy);
+      return data;
+    })
+    .finally(() => {
+      inflightGet.delete(key);
+    });
+
+  inflightGet.set(key, task);
+  return task;
+}
+
+async function executeRequest<T>(
+  path: string,
+  method: HttpMethod,
+  options?: ApiRequestOptions,
 ): Promise<T> {
   const baseUrl = getApiBaseUrl();
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -74,6 +141,7 @@ export async function apiRequest<T = unknown>(
     response = await fetch(requestUrl, {
       method,
       headers,
+      signal: options?.signal,
       body: options?.body
         ? isFormData
           ? (options.body as FormData)

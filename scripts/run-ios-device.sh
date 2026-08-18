@@ -153,7 +153,7 @@ CONFIG="Debug"
 WORKSPACE="ios/KidNest.xcworkspace"
 DERIVED="ios/build"
 APP_PATH="$DERIVED/Build/Products/${CONFIG}-iphoneos/${SCHEME}.app"
-BUNDLE_ID="org.reactjs.native.example.KidNest"
+BUNDLE_ID="com.kidonest"
 
 echo "Device: $DEVICE_NAME ($DEVICE_UDID)"
 

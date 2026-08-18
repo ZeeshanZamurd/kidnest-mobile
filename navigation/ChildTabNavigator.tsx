@@ -10,6 +10,9 @@ import ChildWatchHistoryScreen from '../screens/Child/ChildWatchHistoryScreen';
 import FavoritesScreen from '../screens/Shared/FavoritesScreen';
 import { useTheme } from '../context/ThemeContext';
 import { useChildTabBarStyle } from './tabBarOptions';
+import { useChildFavorites } from '../hooks/useChildFavorites';
+import { useAppBlockEnforcement } from '../hooks/useAppBlockEnforcement';
+import { useAppStore } from '../store/useAppStore';
 import type { ChildTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<ChildTabParamList>();
@@ -33,6 +36,9 @@ function TabIcon({ name, focused, color }: { name: string; focused: boolean; col
 export default function ChildTabNavigator() {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const activeChildId = useAppStore((s) => s.activeChildId);
+  useChildFavorites(activeChildId);
+  useAppBlockEnforcement();
   const tabBarStyle = useChildTabBarStyle(colors);
 
   return (

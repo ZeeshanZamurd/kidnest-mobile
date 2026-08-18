@@ -1,15 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { useTheme } from '../../context/ThemeContext';
-import { radius, typography } from '../../theme/colors';
+import { radius } from '../../theme/colors';
 
 export type AssignButtonState = 'idle' | 'loading' | 'success' | 'assigned';
 
@@ -33,55 +26,39 @@ export default function AssignActionButton({
   style,
 }: Props) {
   const { colors } = useTheme();
-  const scale = useSharedValue(1);
-  const tickOpacity = useSharedValue(state === 'assigned' ? 1 : 0);
-
-  useEffect(() => {
-    if (state === 'success') {
-      scale.value = withSequence(
-        withSpring(1.2, { damping: 8 }),
-        withSpring(1, { damping: 12 }),
-      );
-      tickOpacity.value = withTiming(1, { duration: 200 });
-    } else if (state === 'assigned') {
-      tickOpacity.value = withTiming(1, { duration: 180 });
-      scale.value = withSpring(1);
-    } else {
-      tickOpacity.value = withTiming(0, { duration: 120 });
-      scale.value = withSpring(1);
-    }
-  }, [state, scale, tickOpacity]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
   const isAssigned = state === 'assigned' || state === 'success';
   const isLoading = state === 'loading';
   const disabled = isLoading;
-
   const accent = isAssigned ? SUCCESS_GREEN : colors.primary;
 
   if (variant === 'inline') {
     return (
-      <Pressable onPress={onPress} disabled={disabled} hitSlop={8} style={style}>
-        <Animated.View style={animStyle}>
-          {isLoading ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : isAssigned ? (
-            <Icon name="checkmark-circle" size={24} color={SUCCESS_GREEN} />
-          ) : (
-            <Icon name="add-circle-outline" size={24} color={colors.primary} />
-          )}
-        </Animated.View>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        hitSlop={8}
+        style={[styles.inlineWrap, style]}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : isAssigned ? (
+          <Icon name="checkmark-circle" size={24} color={SUCCESS_GREEN} />
+        ) : (
+          <Icon name="add-circle" size={26} color={colors.primary} />
+        )}
       </Pressable>
     );
   }
 
   if (variant === 'compact') {
     return (
-      <Pressable onPress={onPress} disabled={disabled} hitSlop={8} style={style}>
-        <Animated.View style={[styles.compact, animStyle, isAssigned && styles.compactAssigned]}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        hitSlop={8}
+        style={[styles.compactWrap, style]}
+      >
+        <View style={[styles.compact, isAssigned && styles.compactAssigned]}>
           {isLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : isAssigned ? (
@@ -89,48 +66,49 @@ export default function AssignActionButton({
           ) : (
             <Icon name="add" size={18} color={colors.primary} />
           )}
-        </Animated.View>
+        </View>
       </Pressable>
     );
   }
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[
-        styles.full,
-        {
-          borderColor: accent,
-          backgroundColor: isAssigned ? SUCCESS_GREEN + '12' : 'transparent',
-        },
-        style,
-      ]}
-    >
-      <Animated.View style={[styles.fullInner, animStyle]}>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} />
-        ) : isAssigned ? (
-          <>
-            <Icon name="checkmark-circle" size={18} color={SUCCESS_GREEN} />
-            <Text style={[styles.fullText, { color: SUCCESS_GREEN }]}>{assignedLabel}</Text>
-          </>
-        ) : (
-          <>
-            <Icon name="add-circle-outline" size={17} color={colors.primary} />
-            <Text style={[styles.fullText, { color: colors.primary }]}>{label}</Text>
-          </>
-        )}
-      </Animated.View>
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.fullWrap, style]}>
+      <View
+        style={[
+          styles.full,
+          {
+            borderColor: accent,
+            backgroundColor: isAssigned ? SUCCESS_GREEN + '12' : colors.primary + '08',
+          },
+        ]}
+      >
+        <View style={styles.fullInner}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : isAssigned ? (
+            <>
+              <Icon name="checkmark-circle" size={18} color={SUCCESS_GREEN} />
+              <Text style={[styles.fullText, { color: SUCCESS_GREEN }]}>{assignedLabel}</Text>
+            </>
+          ) : (
+            <>
+              <Icon name="add-circle" size={18} color={colors.primary} />
+              <Text style={[styles.fullText, { color: colors.primary }]}>{label}</Text>
+            </>
+          )}
+        </View>
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  fullWrap: {
+    alignSelf: 'flex-start',
+  },
   full: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     borderWidth: 1.5,
     borderRadius: radius.lg,
     paddingHorizontal: 12,
@@ -147,6 +125,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  compactWrap: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   compact: {
     width: 28,
     height: 28,
@@ -156,5 +140,11 @@ const styles = StyleSheet.create({
   },
   compactAssigned: {
     backgroundColor: SUCCESS_GREEN + '18',
+  },
+  inlineWrap: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

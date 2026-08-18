@@ -11,6 +11,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppInsets } from '../../hooks/useAppInsets';
+import { BRAND_PRIMARY } from '../../constants/branding';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, spacing, typography } from '../../theme/colors';
 
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     ...Platform.select({
       ios: {
-        shadowColor: '#7C3AED',
+        shadowColor: BRAND_PRIMARY,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.25,
         shadowRadius: 6,

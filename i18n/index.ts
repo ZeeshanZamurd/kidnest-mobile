@@ -32,6 +32,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: 'en',
   compatibilityJSON: 'v4',
   interpolation: { escapeValue: false },
+  react: { useSuspense: false },
 });
 
 export async function hydrateLanguage(): Promise<void> {

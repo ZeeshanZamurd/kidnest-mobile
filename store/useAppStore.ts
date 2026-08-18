@@ -6,7 +6,6 @@ import {
   MOCK_NOTIFICATIONS,
   MOCK_PARENT,
   MOCK_VIDEOS,
-  MOCK_WATCH_HISTORY,
 } from '../data/mockData';
 import { persistCurrentAuthMeta } from '../services/authBootstrap';
 import { clearAuthMeta } from '../services/authStorage';
@@ -29,18 +28,23 @@ type AppState = {
   platformAccess: PlatformAccess | null;
   subscriptionPromptDismissed: boolean;
   apiChildren: ParentChild[];
+  apiChildrenLoaded: boolean;
   parent: typeof MOCK_PARENT;
   children: ChildProfile[];
   videos: Video[];
   notifications: AppNotification[];
   autoplayEnabled: boolean;
   searchQuery: string;
+  childFavoriteVideoIds: string[];
+  childFavoriteChannelIds: string[];
 
   setAuthenticated: (value: boolean) => void;
   setOnboarded: (value: boolean) => void;
   setRole: (role: UserRole) => void;
   setActiveChild: (childId: string) => void;
   toggleVideoFavorite: (videoId: string) => void;
+  toggleChannelFavorite: (channelId: string) => void;
+  setChildFavoriteIds: (videoIds: string[], channelIds: string[]) => void;
   approveVideo: (videoId: string) => void;
   blockVideo: (videoId: string) => void;
   toggleChildPause: (childId: string) => void;
@@ -51,6 +55,7 @@ type AppState = {
   setPlatformAccess: (access: PlatformAccess | null) => void;
   dismissSubscriptionPrompt: () => void;
   setApiChildren: (children: ParentChild[]) => void;
+  setApiChildrenLoaded: (loaded: boolean) => void;
   login: (role: UserRole, childId?: string) => void;
   exitProfileMode: () => void;
   logout: () => void;
@@ -65,12 +70,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   platformAccess: null,
   subscriptionPromptDismissed: false,
   apiChildren: [],
+  apiChildrenLoaded: false,
   parent: MOCK_PARENT,
   children: MOCK_CHILDREN,
   videos: MOCK_VIDEOS,
   notifications: MOCK_NOTIFICATIONS,
   autoplayEnabled: true,
   searchQuery: '',
+  childFavoriteVideoIds: [],
+  childFavoriteChannelIds: [],
 
   setAuthenticated: (value) => set({ isAuthenticated: value }),
   setOnboarded: (value) => {
@@ -80,11 +88,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRole: (role) => set({ role }),
   setActiveChild: (childId) => set({ activeChildId: childId }),
 
+  setChildFavoriteIds: (videoIds, channelIds) =>
+    set({ childFavoriteVideoIds: videoIds, childFavoriteChannelIds: channelIds }),
+
   toggleVideoFavorite: (videoId) =>
     set({
       videos: get().videos.map((v) =>
         v.id === videoId ? { ...v, isFavorite: !v.isFavorite } : v,
       ),
+      childFavoriteVideoIds: get().childFavoriteVideoIds.includes(videoId)
+        ? get().childFavoriteVideoIds.filter((id) => id !== videoId)
+        : [...get().childFavoriteVideoIds, videoId],
+    }),
+
+  toggleChannelFavorite: (channelId) =>
+    set({
+      childFavoriteChannelIds: get().childFavoriteChannelIds.includes(channelId)
+        ? get().childFavoriteChannelIds.filter((id) => id !== channelId)
+        : [...get().childFavoriteChannelIds, channelId],
     }),
 
   approveVideo: (videoId) =>
@@ -143,8 +164,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setApiChildren: (children) =>
     set({
       apiChildren: children,
+      apiChildrenLoaded: true,
       activeChildId: get().activeChildId ?? children[0]?.id ?? null,
     }),
+  setApiChildrenLoaded: (loaded) => set({ apiChildrenLoaded: loaded }),
 
   login: (role, childId) => {
     set({
@@ -166,6 +189,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       platformAccess: null,
       subscriptionPromptDismissed: false,
       apiChildren: [],
+      apiChildrenLoaded: false,
+      childFavoriteVideoIds: [],
+      childFavoriteChannelIds: [],
     });
     void clearAuthMeta();
   },
@@ -173,4 +199,3 @@ export const useAppStore = create<AppState>((set, get) => ({
 
 export const useAnalytics = () => MOCK_ANALYTICS;
 export const useChannels = () => MOCK_CHANNELS;
-export const useWatchHistory = () => MOCK_WATCH_HISTORY;

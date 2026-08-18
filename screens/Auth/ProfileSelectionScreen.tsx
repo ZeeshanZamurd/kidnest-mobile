@@ -10,11 +10,10 @@ import { useTranslation } from 'react-i18next';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import AppLogo from '../../components/brand/AppLogo';
 import ProfileCard from '../../components/profile/ProfileCard';
 import ParentPinModal from '../../components/profile/ParentPinModal';
 import GradientBackground from '../../components/ui/GradientBackground';
-import { fetchParentChildren } from '../../api/parent';
+import { loadParentChildren } from '../../services/parentChildrenCache';
 import { type AvatarKey } from '../../constants/avatars';
 import { useTheme } from '../../context/ThemeContext';
 import { useAppInsets } from '../../hooks/useAppInsets';
@@ -50,7 +49,7 @@ export default function ProfileSelectionScreen() {
   const loadProfiles = useCallback(async () => {
     setLoading(true);
     try {
-      const apiChildren = await fetchParentChildren();
+      const apiChildren = await loadParentChildren();
       setApiChildren(apiChildren);
 
       const mapped = await Promise.all(
@@ -115,9 +114,6 @@ export default function ProfileSelectionScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.logoWrap}>
-          <AppLogo size={72} />
-        </View>
         <Text style={[styles.title, { color: colors.text }]}>{t('who_is_watching')}</Text>
 
         {loading ? (
@@ -194,14 +190,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
   },
-  logoWrap: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
   title: {
     ...typography.hero,
     textAlign: 'center',
     marginBottom: spacing.xl,
+    marginTop: spacing.md,
   },
   loader: { marginTop: spacing.xxl },
   emptyWrap: {

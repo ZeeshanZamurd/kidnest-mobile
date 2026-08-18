@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import GradientBackground from '../../components/ui/GradientBackground';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -15,6 +15,9 @@ import { useTabScreenPadding } from '../../hooks/useScreenPadding';
 import { useAppInsets } from '../../hooks/useAppInsets';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
+import { navigateRoot } from '../../navigation/rootNavigation';
+import { CacheManager, DEFAULT_VIDEO_CACHE_MB, type CacheStats } from '../../services/cache';
+import { getInflightRequestCount } from '../../api/client';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -29,6 +32,28 @@ export default function SettingsScreen() {
   const autoplayEnabled = useAppStore((s) => s.autoplayEnabled);
   const setAutoplay = useAppStore((s) => s.setAutoplay);
   const [showLanguages, setShowLanguages] = useState(false);
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  const refreshCacheStats = useCallback(() => {
+    setCacheStats(CacheManager.getStats(getInflightRequestCount()));
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshCacheStats();
+    }, [refreshCacheStats]),
+  );
+
+  const handleClearCache = async () => {
+    setClearingCache(true);
+    try {
+      await CacheManager.clearAll();
+      refreshCacheStats();
+    } finally {
+      setClearingCache(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -110,13 +135,48 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        <SettingRow icon="analytics" label={t('analytics')} onPress={() => navigation.navigate('Analytics')} />
-        <SettingRow icon="time" label={t('history')} onPress={() => navigation.navigate('WatchHistory')} />
+        <SettingRow icon="analytics" label={t('analytics')} onPress={() => navigateRoot(navigation, 'Analytics')} />
+        <SettingRow icon="time" label={t('history')} onPress={() => navigateRoot(navigation, 'WatchHistory')} />
+        {Platform.OS === 'android' ? (
+          <SettingRow
+            icon="shield-checkmark"
+            label="Block apps"
+            onPress={() => navigateRoot(navigation, 'AppBlocking')}
+          />
+        ) : null}
         <SettingRow
           icon="diamond-outline"
           label="Subscription & Premium"
-          onPress={() => navigation.navigate('Subscription')}
+          onPress={() => navigateRoot(navigation, 'Subscription')}
         />
+
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>Storage & cache</Text>
+        {cacheStats ? (
+          <View style={[styles.cacheCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.cacheLine, { color: colors.text }]}>
+              API entries: {cacheStats.memoryEntries} memory · {cacheStats.persistedKeys} persisted
+            </Text>
+            <Text style={[styles.cacheLine, { color: colors.textMuted }]}>
+              Image prefetch hits: {cacheStats.imagePrefetchHits} · misses: {cacheStats.imagePrefetchMisses}
+            </Text>
+            <Text style={[styles.cacheLine, { color: colors.textMuted }]}>
+              Video cache budget: ~{DEFAULT_VIDEO_CACHE_MB} MB (native player)
+            </Text>
+          </View>
+        ) : null}
+        <Pressable
+          onPress={() => void handleClearCache()}
+          disabled={clearingCache}
+          style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Icon name="trash-outline" size={22} color={colors.danger} />
+          <Text style={[styles.rowLabel, { color: colors.text }]}>Clear cached data</Text>
+          {clearingCache ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Icon name="chevron-forward" size={20} color={colors.textMuted} />
+          )}
+        </Pressable>
 
         <SettingRow
           icon="people"
@@ -143,6 +203,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   rowLabel: { flex: 1, ...typography.body },
+  sectionLabel: { ...typography.caption, fontWeight: '700', marginTop: spacing.md, marginBottom: spacing.sm },
+  cacheCard: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+    gap: 4,
+  },
+  cacheLine: { ...typography.caption },
   langList: { marginBottom: spacing.md, gap: spacing.sm },
   langItem: {
     flexDirection: 'row',

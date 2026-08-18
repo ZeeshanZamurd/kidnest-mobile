@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { assignChannel, assignVideo, fetchChildLibrary, removeChannel, removeVideo } from '../api/assignments';
-import { fetchParentChildren, type ParentChild } from '../api/parent';
+import { CacheManager } from '../services/cache';
 import type { BrowseChannel, BrowseVideo } from '../api/browse';
 import type { RootStackParamList } from '../navigation/types';
 import { useAppStore } from '../store/useAppStore';
 import type { AssignButtonState } from '../components/discover/AssignActionButton';
+import { KidAlert } from '../services/kidAlert';
+import { loadParentChildren } from '../services/parentChildrenCache';
 
 type PendingAssign =
   | { type: 'video'; item: BrowseVideo }
@@ -19,20 +20,30 @@ function itemKey(type: 'video' | 'channel', id: string) {
   return `${type}:${id}`;
 }
 
+function isLimitError(message: string): boolean {
+  return /upgrade|limit|premium|subscription/i.test(message);
+}
+
 export function useAssignToChild() {
   const navigation = useNavigation<Nav>();
   const apiChildren = useAppStore((s) => s.apiChildren);
-  const setApiChildren = useAppStore((s) => s.setApiChildren);
+  const apiChildrenLoaded = useAppStore((s) => s.apiChildrenLoaded);
   const activeChildId = useAppStore((s) => s.activeChildId);
+  const platformAccess = useAppStore((s) => s.platformAccess);
   const setActiveChild = useAppStore((s) => s.setActiveChild);
 
+  const hasFullVideoAccess =
+    platformAccess?.hasFullVideoAccess ?? false;
+  const canAssignChannels = platformAccess?.canAssignChannels ?? hasFullVideoAccess;
+  const freeMaxAssignments = platformAccess?.freeMaxAssignments ?? 10;
+
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [pending, setPending] = useState<PendingAssign | null>(null);
   const [selectOnly, setSelectOnly] = useState(false);
   const [assignedVideoIds, setAssignedVideoIds] = useState<Set<string>>(new Set());
   const [assignedChannelIds, setAssignedChannelIds] = useState<Set<string>>(new Set());
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [successKey, setSuccessKey] = useState<string | null>(null);
+  const [assigningChildId, setAssigningChildId] = useState<string | null>(null);
 
   const targetChildId = activeChildId ?? apiChildren[0]?.id ?? null;
 
@@ -56,33 +67,121 @@ export function useAssignToChild() {
     }
   }, [targetChildId, reloadAssignments]);
 
-  const ensureChildren = useCallback(async (): Promise<ParentChild[]> => {
-    if (apiChildren.length > 0) return apiChildren;
-    try {
-      const list = await fetchParentChildren();
-      setApiChildren(list);
-      return list;
-    } catch {
-      return [];
-    }
-  }, [apiChildren, setApiChildren]);
+  useFocusEffect(
+    useCallback(() => {
+      if (targetChildId) {
+        void reloadAssignments(targetChildId);
+      }
+    }, [targetChildId, reloadAssignments]),
+  );
 
-  const openPicker = useCallback(
-    async (assign?: PendingAssign) => {
-      const list = await ensureChildren();
-      if (list.length === 0) {
-        Alert.alert('No child profiles', 'Add a child profile first.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Add child', onPress: () => navigation.navigate('AddChild') },
-        ]);
+  const ensureChildren = useCallback(async () => {
+    if (apiChildrenLoaded) return apiChildren;
+    try {
+      return await loadParentChildren();
+    } catch {
+      return null;
+    }
+  }, [apiChildren, apiChildrenLoaded]);
+
+  const promptAddChild = useCallback(() => {
+    KidAlert.alert('No child profiles', 'Add a child profile first.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Add child', onPress: () => navigation.navigate('AddChild') },
+    ]);
+  }, [navigation]);
+
+  const performAssign = useCallback(
+    async (childId: string, assign: PendingAssign) => {
+      const key =
+        assign.type === 'video'
+          ? itemKey('video', assign.item.id)
+          : itemKey('channel', assign.item.id);
+
+      setActiveChild(childId);
+      setAssigningChildId(childId);
+      setLoadingKey(key);
+
+      try {
+        if (assign.type === 'video') {
+          await assignVideo(childId, assign.item.id);
+          setAssignedVideoIds((prev) => new Set(prev).add(assign.item.id));
+        } else {
+          await assignChannel(childId, assign.item.id);
+          setAssignedChannelIds((prev) => new Set(prev).add(assign.item.id));
+        }
+
+        setSuccessKey(key);
+        setTimeout(() => {
+          setSuccessKey((current) => (current === key ? null : current));
+        }, 1200);
+
+        CacheManager.invalidate(`library:${childId}`);
+        CacheManager.invalidate(`feed:${childId}`);
+        void reloadAssignments(childId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Please try again.';
+        if (isLimitError(msg)) {
+          KidAlert.alert('Limit reached', msg, [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
+          ]);
+        } else {
+          KidAlert.alert('Could not add', msg);
+        }
+      } finally {
+        setAssigningChildId(null);
+        setLoadingKey(null);
+      }
+    },
+    [navigation, reloadAssignments, setActiveChild],
+  );
+
+  const assignToActiveChild = useCallback(
+    async (assign: PendingAssign) => {
+      const children = await ensureChildren();
+      if (children === null) {
+        KidAlert.alert('Could not load profiles', 'Please check your connection and try again.');
         return;
       }
-      setSelectOnly(!assign);
-      setPending(assign ?? null);
-      setPickerVisible(true);
+
+      if (children.length === 0) {
+        promptAddChild();
+        return;
+      }
+
+      const childId = activeChildId ?? children[0]?.id;
+      if (!childId) {
+        promptAddChild();
+        return;
+      }
+
+      const child = children.find((c) => c.id === childId);
+      if (child?.isPaused) {
+        KidAlert.alert('Profile paused', 'Unpause this child profile before adding content.');
+        return;
+      }
+
+      await performAssign(childId, assign);
     },
-    [ensureChildren, navigation],
+    [activeChildId, ensureChildren, performAssign, promptAddChild],
   );
+
+  const openPickerForSelect = useCallback(async () => {
+    const children = await ensureChildren();
+    if (children === null) {
+      KidAlert.alert('Could not load profiles', 'Please check your connection and try again.');
+      return;
+    }
+
+    if (children.length === 0) {
+      promptAddChild();
+      return;
+    }
+
+    setSelectOnly(true);
+    setPickerVisible(true);
+  }, [ensureChildren, promptAddChild]);
 
   const isVideoDirectlyAssigned = useCallback(
     (videoId: string) => assignedVideoIds.has(videoId),
@@ -107,9 +206,11 @@ export function useAssignToChild() {
           next.delete(video.id);
           return next;
         });
+        CacheManager.invalidate(`library:${childId}`);
+        CacheManager.invalidate(`feed:${childId}`);
         void reloadAssignments(childId);
       } catch (err) {
-        Alert.alert(
+        KidAlert.alert(
           'Could not remove',
           err instanceof Error ? err.message : 'Please try again.',
         );
@@ -131,9 +232,11 @@ export function useAssignToChild() {
           next.delete(channelId);
           return next;
         });
+        CacheManager.invalidate(`library:${childId}`);
+        CacheManager.invalidate(`feed:${childId}`);
         void reloadAssignments(childId);
       } catch (err) {
-        Alert.alert(
+        KidAlert.alert(
           'Could not remove',
           err instanceof Error ? err.message : 'Please try again.',
         );
@@ -147,18 +250,30 @@ export function useAssignToChild() {
   const requestToggleVideo = useCallback(
     (video: BrowseVideo) => {
       if (!isVideoAssigned(video.id, video.channelId)) {
-        void openPicker({ type: 'video', item: video });
+        void assignToActiveChild({ type: 'video', item: video });
         return;
       }
 
       const childId = targetChildId;
       if (!childId) {
-        Alert.alert('Select a child', 'Choose a child profile first using the bar above.');
+        KidAlert.alert('Select a child', 'Choose a child profile first using the bar above.');
+        return;
+      }
+
+      if (!hasFullVideoAccess) {
+        KidAlert.alert(
+          'Cannot remove',
+          'Free plan videos stay in your library. Subscribe for full control.',
+          [
+            { text: 'OK', style: 'cancel' },
+            { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
+          ],
+        );
         return;
       }
 
       if (isVideoDirectlyAssigned(video.id)) {
-        Alert.alert('Remove video?', video.title, [
+        KidAlert.alert('Remove video?', video.title, [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Remove',
@@ -170,7 +285,7 @@ export function useAssignToChild() {
       }
 
       if (video.channelId && assignedChannelIds.has(video.channelId)) {
-        Alert.alert(
+        KidAlert.alert(
           'Remove channel?',
           `"${video.channelName}" was added as a whole channel. Remove it to unassign all its videos.`,
           [
@@ -186,9 +301,11 @@ export function useAssignToChild() {
     },
     [
       assignedChannelIds,
+      assignToActiveChild,
+      hasFullVideoAccess,
       isVideoAssigned,
       isVideoDirectlyAssigned,
-      openPicker,
+      navigation,
       performRemoveChannel,
       performRemoveVideo,
       targetChildId,
@@ -197,18 +314,30 @@ export function useAssignToChild() {
 
   const requestToggleChannel = useCallback(
     (channel: BrowseChannel) => {
+      if (!canAssignChannels) {
+        KidAlert.alert(
+          'Subscribe for channels',
+          'Free plan includes up to 10 individual videos. Subscribe to add whole channels.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
+          ],
+        );
+        return;
+      }
+
       if (!assignedChannelIds.has(channel.id)) {
-        void openPicker({ type: 'channel', item: channel });
+        void assignToActiveChild({ type: 'channel', item: channel });
         return;
       }
 
       const childId = targetChildId;
       if (!childId) {
-        Alert.alert('Select a child', 'Choose a child profile first using the bar above.');
+        KidAlert.alert('Select a child', 'Choose a child profile first using the bar above.');
         return;
       }
 
-      Alert.alert('Remove channel?', channel.title, [
+      KidAlert.alert('Remove channel?', channel.title, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
@@ -217,7 +346,7 @@ export function useAssignToChild() {
         },
       ]);
     },
-    [assignedChannelIds, performRemoveChannel, openPicker, targetChildId],
+    [assignedChannelIds, assignToActiveChild, canAssignChannels, navigation, performRemoveChannel, targetChildId],
   );
 
   const getVideoAssignState = useCallback(
@@ -245,63 +374,27 @@ export function useAssignToChild() {
   const confirmChild = useCallback(
     async (childId: string) => {
       setActiveChild(childId);
-
-      if (selectOnly || !pending) {
-        setPickerVisible(false);
-        setPending(null);
-        setSelectOnly(false);
-        void reloadAssignments(childId);
-        return;
-      }
-
-      const key =
-        pending.type === 'video'
-          ? itemKey('video', pending.item.id)
-          : itemKey('channel', pending.item.id);
-
       setPickerVisible(false);
-      setPending(null);
       setSelectOnly(false);
-      setLoadingKey(key);
-
-      try {
-        if (pending.type === 'video') {
-          await assignVideo(childId, pending.item.id);
-          setAssignedVideoIds((prev) => new Set(prev).add(pending.item.id));
-        } else {
-          await assignChannel(childId, pending.item.id);
-          setAssignedChannelIds((prev) => new Set(prev).add(pending.item.id));
-        }
-
-        setLoadingKey(null);
-        setSuccessKey(key);
-        setTimeout(() => {
-          setSuccessKey((current) => (current === key ? null : current));
-        }, 1200);
-
-        void reloadAssignments(childId);
-      } catch (err) {
-        setLoadingKey(null);
-        Alert.alert(
-          'Could not add',
-          err instanceof Error ? err.message : 'Please try again.',
-        );
-      }
+      void reloadAssignments(childId);
     },
-    [pending, reloadAssignments, selectOnly, setActiveChild],
+    [reloadAssignments, setActiveChild],
   );
 
   const closePicker = useCallback(() => {
+    if (assigningChildId) return;
     setPickerVisible(false);
-    setPending(null);
     setSelectOnly(false);
-  }, []);
+  }, [assigningChildId]);
 
   return {
     apiChildren,
     activeChildId: targetChildId,
     pickerVisible,
-    openPickerForSelect: () => void openPicker(),
+    pickerLoading: false,
+    pickerSelectOnly: selectOnly,
+    assigningChildId,
+    openPickerForSelect: () => void openPickerForSelect(),
     requestToggleVideo,
     requestToggleChannel,
     requestAssignVideo: requestToggleVideo,
@@ -310,5 +403,9 @@ export function useAssignToChild() {
     getChannelAssignState,
     confirmChild,
     closePicker,
+    reloadAssignments,
+    canAssignChannels,
+    freeMaxAssignments,
+    hasFullVideoAccess,
   };
-}
+};

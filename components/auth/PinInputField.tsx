@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import SecureTextInput from '../ui/SecureTextInput';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, spacing, typography } from '../../theme/colors';
 
@@ -29,12 +30,11 @@ export default function PinInputField({
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-      <TextInput
+      <SecureTextInput
         value={value}
         onChangeText={handleChange}
         keyboardType="number-pad"
         maxLength={4}
-        secureTextEntry
         editable={editable}
         placeholder="••••"
         placeholderTextColor={colors.textMuted}

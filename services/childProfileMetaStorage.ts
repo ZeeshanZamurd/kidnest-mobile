@@ -21,6 +21,10 @@ async function loadMap(): Promise<MetaMap> {
   }
 }
 
+export async function loadChildProfileMetaMap(): Promise<MetaMap> {
+  return loadMap();
+}
+
 async function saveMap(map: MetaMap): Promise<void> {
   await AsyncStorage.setItem(META_KEY, JSON.stringify(map));
 }

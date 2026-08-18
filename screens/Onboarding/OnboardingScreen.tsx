@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import Icon from 'react-native-vector-icons/Ionicons';
 import ScreenFooter from '../../components/layout/ScreenFooter';
 import AppLogo from '../../components/brand/AppLogo';
+import { LOGO_SIZES } from '../../constants/branding';
 import GradientBackground from '../../components/ui/GradientBackground';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import { useAppInsets } from '../../hooks/useAppInsets';
@@ -59,7 +60,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
           {SLIDES.map((slide, index) => (
             <View key={slide.titleKey} style={styles.slide}>
               {index === 0 ? (
-                <AppLogo size={120} shadow={false} />
+                <AppLogo size={LOGO_SIZES.onboarding} shadow={false} />
               ) : (
                 <View style={[styles.iconWrap, { backgroundColor: colors.primary + '20' }]}>
                   <Icon name={slide.icon} size={56} color={colors.primary} />

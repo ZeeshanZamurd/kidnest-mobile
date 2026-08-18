@@ -1,18 +1,27 @@
-import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { memo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { ChildChannel } from '../../utils/channelMapper';
+import CachedImage from '../ui/CachedImage';
 
 type Props = {
   channel: ChildChannel;
   onPress: () => void;
   compact?: boolean;
+  onFavorite?: () => void;
+  isFavorite?: boolean;
 };
 
-export default function ChildChannelCard({ channel, onPress, compact = false }: Props) {
+function ChildChannelCard({
+  channel,
+  onPress,
+  compact = false,
+  onFavorite,
+  isFavorite = false,
+}: Props) {
   const { colors } = useTheme();
 
   if (compact) {
@@ -21,10 +30,19 @@ export default function ChildChannelCard({ channel, onPress, compact = false }: 
         onPress={onPress}
         style={[styles.compact, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
-        <Image source={{ uri: channel.thumbnail }} style={styles.compactAvatar} />
+        <CachedImage uri={channel.thumbnail} style={styles.compactAvatar} />
         <Text style={[styles.compactName, { color: colors.text }]} numberOfLines={2}>
           {channel.name}
         </Text>
+        {onFavorite ? (
+          <Pressable style={styles.compactHeart} onPress={onFavorite} hitSlop={8}>
+            <Icon
+              name={isFavorite ? 'heart' : 'heart-outline'}
+              size={18}
+              color={isFavorite ? colors.accent : colors.textMuted}
+            />
+          </Pressable>
+        ) : null}
       </Pressable>
     );
   }
@@ -40,7 +58,7 @@ export default function ChildChannelCard({ channel, onPress, compact = false }: 
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
-        <Image source={{ uri: channel.thumbnail }} style={styles.avatar} />
+        <CachedImage uri={channel.thumbnail} style={styles.avatar} />
         <View style={styles.info}>
           <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
             {channel.name}
@@ -51,7 +69,17 @@ export default function ChildChannelCard({ channel, onPress, compact = false }: 
             </Text>
           ) : null}
         </View>
-        <Icon name="chevron-forward" size={20} color={colors.textMuted} />
+        {onFavorite ? (
+          <Pressable style={styles.heartBtn} onPress={onFavorite} hitSlop={8}>
+            <Icon
+              name={isFavorite ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavorite ? colors.accent : colors.textMuted}
+            />
+          </Pressable>
+        ) : (
+          <Icon name="chevron-forward" size={20} color={colors.textMuted} />
+        )}
       </LinearGradient>
     </Pressable>
   );
@@ -108,4 +136,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     minHeight: 34,
   },
+  compactHeart: {
+    marginTop: 2,
+  },
+  heartBtn: {
+    padding: 4,
+  },
 });
+
+export default memo(ChildChannelCard);

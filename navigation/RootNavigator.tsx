@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,10 +7,10 @@ import AuthScreen from '../screens/Auth/AuthScreen';
 import ProfileSelectionScreen from '../screens/Auth/ProfileSelectionScreen';
 import ParentTabNavigator from './ParentTabNavigator';
 import ChildTabNavigator from './ChildTabNavigator';
-import VideoPlayerScreen from '../screens/Shared/VideoPlayerScreen';
 import AddVideoScreen from '../screens/Parent/AddVideoScreen';
 import AddChildScreen from '../screens/Parent/AddChildScreen';
 import ChildProfilesScreen from '../screens/Parent/ChildProfilesScreen';
+import ChildProfileDetailScreen from '../screens/Parent/ChildProfileDetailScreen';
 import WatchHistoryScreen from '../screens/Shared/WatchHistoryScreen';
 import FavoritesScreen from '../screens/Shared/FavoritesScreen';
 import AnalyticsScreen from '../screens/Parent/AnalyticsScreen';
@@ -18,9 +18,9 @@ import NotificationsScreen from '../screens/Shared/NotificationsScreen';
 import SearchScreen from '../screens/Parent/SearchScreen';
 import ParentLibraryScreen from '../screens/Parent/ParentLibraryScreen';
 import SubscriptionScreen from '../screens/Parent/SubscriptionScreen';
-import ChannelDetailScreen from '../screens/Parent/ChannelDetailScreen';
-import ChildChannelDetailScreen from '../screens/Child/ChildChannelDetailScreen';
+import AppBlockingScreen from '../screens/Parent/AppBlockingScreen';
 import { useAppStore } from '../store/useAppStore';
+import { initAppBlockPermissionWatcher } from '../services/appBlockPermission';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -44,6 +44,11 @@ export default function RootNavigator() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const parentSession = useAppStore((s) => s.parentSession);
   const role = useAppStore((s) => s.role);
+
+  useEffect(() => {
+    if (role !== 'parent') return;
+    return initAppBlockPermissionWatcher();
+  }, [role]);
 
   const initialRoute = !hasOnboarded
     ? 'Onboarding'
@@ -71,12 +76,17 @@ export default function RootNavigator() {
       <Stack.Screen name="ChildTabs" component={ChildTabNavigator} />
       <Stack.Screen
         name="VideoPlayer"
-        component={VideoPlayerScreen}
+        getComponent={() => require('../screens/Shared/VideoPlayerScreen').default}
         options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
       />
       <Stack.Screen name="AddVideo" component={AddVideoScreen} options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="AddChild" component={AddChildScreen} options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="ChildProfiles" component={ChildProfilesScreen} />
+      <Stack.Screen
+        name="ChildProfileDetail"
+        component={ChildProfileDetailScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
       <Stack.Screen name="WatchHistory" component={WatchHistoryScreen} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
       <Stack.Screen name="Analytics" component={AnalyticsScreen} />
@@ -85,13 +95,18 @@ export default function RootNavigator() {
       <Stack.Screen name="ParentLibrary" component={ParentLibraryScreen} />
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
       <Stack.Screen
+        name="AppBlocking"
+        component={AppBlockingScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
         name="ChannelDetail"
-        component={ChannelDetailScreen}
+        getComponent={() => require('../screens/Parent/ChannelDetailScreen').default}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen
         name="ChildChannelDetail"
-        component={ChildChannelDetailScreen}
+        getComponent={() => require('../screens/Child/ChildChannelDetailScreen').default}
         options={{ animation: 'slide_from_right' }}
       />
     </Stack.Navigator>

@@ -128,8 +128,10 @@ async function finishLogin(
       countryCode: backendUser.countryCode ?? null,
       countryName: backendUser.countryName ?? null,
       subscriptionStatus: null,
-      canBrowseChannels: backendUser.accessType === 'FREE' || !backendUser.accessType,
-      hasFullVideoAccess: backendUser.accessType === 'FREE' || !backendUser.accessType,
+      canBrowseChannels: true,
+      canAssignChannels: false,
+      hasFullVideoAccess: false,
+      freeMaxAssignments: 10,
       freeVideoBrowseLimit:
         backendUser.accessType === 'FREE' || !backendUser.accessType ? null : 10,
       subscription: null,

@@ -1,4 +1,11 @@
 import { apiRequest } from './client';
+import { FEED_API_TTL_MS } from '../services/cache/types';
+
+const LIBRARY_CACHE = {
+  ttlMs: FEED_API_TTL_MS,
+  staleWhileRevalidate: true,
+  persist: true,
+} as const;
 
 export type AssignedVideo = {
   id: string;
@@ -27,6 +34,7 @@ export type AssignedChannel = {
     title: string;
     description: string | null;
     thumbnailUrl: string | null;
+    isPremium?: boolean;
     primaryCategory: { id: string; name: string } | null;
     primaryLanguage: { id: string; name: string } | null;
   };
@@ -38,11 +46,17 @@ export type ChildLibrary = {
 };
 
 export async function fetchChildLibrary(childId: string) {
-  return apiRequest<ChildLibrary>(`/assignments/child/${childId}`, 'GET');
+  return apiRequest<ChildLibrary>(`/assignments/child/${childId}`, 'GET', {
+    cache: LIBRARY_CACHE,
+    cacheKey: `library:${childId}`,
+  });
 }
 
 export async function fetchChildFeed(childId: string) {
-  return apiRequest<AssignedVideo[]>(`/assignments/child/${childId}/feed`, 'GET');
+  return apiRequest<AssignedVideo[]>(`/assignments/child/${childId}/feed`, 'GET', {
+    cache: LIBRARY_CACHE,
+    cacheKey: `feed:${childId}`,
+  });
 }
 
 export async function assignVideo(childId: string, videoId: string) {

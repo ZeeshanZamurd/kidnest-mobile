@@ -1,12 +1,11 @@
 import React from 'react';
 import { Image, StyleSheet, type ImageStyle, type StyleProp } from 'react-native';
-
-const APP_ICON = require('../../assets/branding/app-icon-splash.png');
+import { BRAND_ASSETS, BRAND_PRIMARY } from '../../constants/branding';
 
 type Props = {
   size?: number;
   style?: StyleProp<ImageStyle>;
-  /** Drop shadow — off on splash/gradient screens to avoid a dark halo. */
+  /** Soft brand shadow — off on gradient/splash screens. */
   shadow?: boolean;
 };
 
@@ -14,12 +13,8 @@ type Props = {
 export default function AppLogo({ size = 120, style, shadow = true }: Props) {
   return (
     <Image
-      source={APP_ICON}
-      style={[
-        shadow ? styles.logoShadow : null,
-        { width: size, height: size, borderRadius: size * 0.22 },
-        style,
-      ]}
+      source={BRAND_ASSETS.appLogo}
+      style={[shadow ? styles.logoShadow : null, { width: size, height: size }, style]}
       resizeMode="contain"
       accessibilityLabel="KidNest"
     />
@@ -28,10 +23,10 @@ export default function AppLogo({ size = 120, style, shadow = true }: Props) {
 
 const styles = StyleSheet.create({
   logoShadow: {
-    shadowColor: '#000',
+    shadowColor: BRAND_PRIMARY,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    elevation: 10,
   },
 });

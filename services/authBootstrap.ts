@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore';
 import type { BackendUser } from '../types/auth';
 import type { PlatformAccess } from '../api/parent';
 import { clearAuthMeta, loadAuthMeta, saveAuthMeta } from './authStorage';
+import { loadParentChildren, resetParentChildrenCache } from './parentChildrenCache';
 
 async function buildPlatformAccess(backendUser: BackendUser): Promise<PlatformAccess | null> {
   try {
@@ -19,8 +20,10 @@ async function buildPlatformAccess(backendUser: BackendUser): Promise<PlatformAc
       countryCode: backendUser.countryCode ?? null,
       countryName: backendUser.countryName ?? null,
       subscriptionStatus: null,
-      canBrowseChannels: isFree,
-      hasFullVideoAccess: isFree,
+      canBrowseChannels: true,
+      canAssignChannels: false,
+      hasFullVideoAccess: false,
+      freeMaxAssignments: 10,
       freeVideoBrowseLimit: isFree ? null : 10,
       subscription: null,
     };
@@ -31,17 +34,24 @@ export async function restoreSessionFromFirebaseUser(firebaseUser: FirebaseUser)
   const idToken = await firebaseUser.getIdToken();
   setApiAuthToken(idToken);
 
-  const backendUser = await fetchUserByFirebaseUid(firebaseUser.uid);
-  const platformAccess = await buildPlatformAccess(backendUser);
+  const [backendUser, platformAccess] = await Promise.all([
+    fetchUserByFirebaseUid(firebaseUser.uid),
+    fetchPlatformAccess().catch(() => null),
+  ]);
+
+  const resolvedAccess =
+    platformAccess ?? (await buildPlatformAccess(backendUser));
 
   const meta = await loadAuthMeta();
   const store = useAppStore.getState();
 
-  store.setParentSession({ backendUser, idToken }, platformAccess);
+  store.setParentSession({ backendUser, idToken }, resolvedAccess);
 
   if (meta.hasOnboarded) {
     store.setOnboarded(true);
   }
+
+  void loadParentChildren();
 }
 
 export async function refreshIdToken(force = true): Promise<string | null> {
@@ -65,6 +75,7 @@ export async function persistCurrentAuthMeta(): Promise<void> {
 }
 
 export async function handleAuthSignedOut(): Promise<void> {
+  resetParentChildrenCache();
   setApiAuthToken(null);
   await clearAuthMeta();
   useAppStore.getState().logout();
@@ -72,22 +83,30 @@ export async function handleAuthSignedOut(): Promise<void> {
 
 /**
  * Restores Firebase session on cold start, keeps tokens fresh, and signs out on auth loss.
- * Calls `onReady` once after the first auth state is resolved.
+ * `onReady` fires as soon as Firebase reports auth state — session restore continues in background.
  */
 export function initAuthListeners(onReady: () => void): () => void {
   let ready = false;
 
+  const finishReady = () => {
+    if (ready) return;
+    ready = true;
+    onReady();
+  };
+
   const unsubAuth = onAuthStateChanged(firebaseAuth, (user) => {
     if (!ready) {
-      ready = true;
+      finishReady();
       if (user) {
-        void restoreSessionFromFirebaseUser(user)
-          .catch(() => {
-            setApiAuthToken(null);
-          })
-          .finally(onReady);
+        void restoreSessionFromFirebaseUser(user).catch(() => {
+          setApiAuthToken(null);
+        });
       } else {
-        onReady();
+        void loadAuthMeta().then((meta) => {
+          if (meta.hasOnboarded) {
+            useAppStore.getState().setOnboarded(true);
+          }
+        });
       }
       return;
     }

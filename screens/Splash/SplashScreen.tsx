@@ -1,55 +1,89 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import AppLogo from '../../components/brand/AppLogo';
-import { BRAND_GRADIENT } from '../../constants/branding';
+import AnimatedShieldLogo from '../../components/child/splash/AnimatedShieldLogo';
+import AnimatedWordmark from '../../components/child/splash/AnimatedWordmark';
+import SplashParticles from '../../components/child/splash/SplashParticles';
+import { BRAND_PRIMARY } from '../../constants/branding';
+import { hideNativeSplash } from '../../services/nativeSplash';
+
+const SPLASH_DURATION_MS = 2500;
+const FADE_OUT_MS = 450;
 
 type Props = {
-  authReady: boolean;
-  onFinish: () => void;
+  /** App bootstrap (auth/storage) finished — splash won't dismiss before this. */
+  authReady?: boolean;
+  onFinish?: () => void;
 };
 
-const MIN_VISIBLE_MS = 700;
+/** Premium app startup splash — shield, particles, wordmark, then fade to app. */
+export default function SplashScreen({ authReady = false, onFinish }: Props) {
+  const screenOpacity = useSharedValue(1);
+  const startedAt = useRef(Date.now());
+  const finishing = useRef(false);
 
-export default function SplashScreen({ authReady, onFinish }: Props) {
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.88);
+  useLayoutEffect(() => {
+    hideNativeSplash();
+  }, []);
 
-  useEffect(() => {
-    opacity.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
-    scale.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
-  }, [opacity, scale]);
+  const finish = () => {
+    if (finishing.current || !onFinish) return;
+    finishing.current = true;
+    onFinish();
+  };
 
   useEffect(() => {
     if (!authReady) return;
-    const timer = setTimeout(onFinish, MIN_VISIBLE_MS);
-    return () => clearTimeout(timer);
-  }, [authReady, onFinish]);
 
-  const logoStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }],
+    const elapsed = Date.now() - startedAt.current;
+    const remaining = Math.max(0, SPLASH_DURATION_MS - elapsed);
+
+    const timer = setTimeout(() => {
+      screenOpacity.value = withTiming(
+        0,
+        { duration: FADE_OUT_MS, easing: Easing.inOut(Easing.cubic) },
+        (done) => {
+          if (done) {
+            runOnJS(finish)();
+          }
+        },
+      );
+    }, remaining);
+
+    return () => clearTimeout(timer);
+  }, [authReady, onFinish, screenOpacity]);
+
+  const fadeStyle = useAnimatedStyle(() => ({
+    opacity: screenOpacity.value,
   }));
 
   return (
-    <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.container}>
+    <Animated.View style={[styles.root, fadeStyle]}>
+      <LinearGradient
+        colors={['#F3EEFF', '#E8DEFF', BRAND_PRIMARY]}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <SplashParticles />
       <View style={styles.center}>
-        <Animated.View style={logoStyle}>
-          <AppLogo size={168} shadow={false} />
-        </Animated.View>
+        <AnimatedShieldLogo />
+        <AnimatedWordmark />
       </View>
-    </LinearGradient>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
   },
   center: {

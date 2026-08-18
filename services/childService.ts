@@ -1,11 +1,11 @@
 import {
   createParentChild,
-  fetchParentChildren,
   type CreateChildPayload,
   type CreatedChildResponse,
 } from '../api/parent';
 import type { AvatarKey } from '../constants/avatars';
 import { setChildAvatarKey } from './childProfileMetaStorage';
+import { loadParentChildren } from './parentChildrenCache';
 import { generateChildCredentials } from '../utils/generateChildCredentials';
 
 const MAX_RETRIES = 3;
@@ -44,5 +44,5 @@ export async function createChildProfile(input: {
 }
 
 export async function refreshParentChildren() {
-  return fetchParentChildren();
+  return loadParentChildren(true);
 }

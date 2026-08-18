@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import AppLogo from '../brand/AppLogo';
+import { LOGO_SIZES } from '../../constants/branding';
 import { useTheme } from '../../context/ThemeContext';
 import { spacing, typography } from '../../theme/colors';
 
@@ -12,7 +13,7 @@ export default function DiscoverHeroHeader() {
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
-        <AppLogo size={44} style={styles.iconBadge} />
+        <AppLogo size={LOGO_SIZES.header} shadow={false} style={styles.iconBadge} />
         <View style={styles.textCol}>
           <Text style={[styles.title, { color: colors.text }]}>{t('discover_title')}</Text>
           <Text style={[styles.subtitle, { color: colors.textMuted }]}>{t('discover_subtitle')}</Text>
@@ -32,9 +33,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   iconBadge: {
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
+    borderRadius: 10,
   },
   textCol: {
     flex: 1,

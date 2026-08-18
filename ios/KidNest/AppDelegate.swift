@@ -22,6 +22,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     reactNativeFactory = factory
 
     window = UIWindow(frame: UIScreen.main.bounds)
+    window?.backgroundColor = UIColor(red: 243 / 255, green: 238 / 255, blue: 255 / 255, alpha: 1)
+    window?.makeKeyAndVisible()
+
+    if let window {
+      SplashOverlay.shared.show(on: window)
+    }
 
     factory.startReactNative(
       withModuleName: "KidNest",

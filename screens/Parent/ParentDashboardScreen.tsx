@@ -476,7 +476,7 @@ export default function ParentDashboardScreen() {
               <View key={child.id}>
                 <ChildProfileCard
                   child={child}
-                  onPress={() => navigation.navigate('AddChild')}
+                  onPress={() => navigation.navigate('ChildProfileDetail', { childId: child.id })}
                 />
                 {child.assignmentCount > 0 && (
                   <Text style={[styles.childMeta, { color: colors.textMuted }]}>

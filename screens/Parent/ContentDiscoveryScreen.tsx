@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -38,6 +38,16 @@ import { useAppStore } from '../../store/useAppStore';
 import { useAssignToChild } from '../../hooks/useAssignToChild';
 import ChildProfilePickerModal from '../../components/profile/ChildProfilePickerModal';
 import SelectedChildBar from '../../components/profile/SelectedChildBar';
+import {
+  isChannelPremiumLocked,
+  isVideoPremiumLocked,
+} from '../../utils/premiumAccess';
+import { promptPremiumSubscribe } from '../../utils/premiumPrompt';
+import {
+  prefetchBrowseThumbnails,
+  prefetchChannelThumbnails,
+} from '../../services/cache';
+import { SHORT_COL_W } from '../../components/discover/DiscoverMediaCard';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -54,6 +64,9 @@ export default function ContentDiscoveryScreen() {
     apiChildren,
     activeChildId,
     pickerVisible,
+    pickerLoading,
+    assigningChildId,
+    pickerSelectOnly,
     openPickerForSelect,
     requestToggleVideo,
     requestToggleChannel,
@@ -78,10 +91,9 @@ export default function ContentDiscoveryScreen() {
   const [error, setError] = useState('');
 
   const hasFullVideoAccess =
-    platformAccess?.hasFullVideoAccess ?? platformAccess?.hasAccess ?? false;
-  const canBrowseChannels =
-    platformAccess?.canBrowseChannels ?? platformAccess?.hasAccess ?? false;
-  const freeVideoLimit = platformAccess?.freeVideoBrowseLimit ?? 10;
+    platformAccess?.hasFullVideoAccess ?? false;
+  const freeMaxAssignments = platformAccess?.freeMaxAssignments ?? 10;
+  const freeVideoLimit = platformAccess?.freeVideoBrowseLimit ?? 20;
 
   useEffect(() => {
     if (platformAccess || !parentSession?.idToken) return;
@@ -99,24 +111,75 @@ export default function ContentDiscoveryScreen() {
       .catch(() => {});
   }, []);
 
-  const openVideo = (videoId: string) => {
-    navigation.navigate('VideoPlayer', { videoId });
-  };
+  const openVideo = useCallback(
+    (video: BrowseVideo) => {
+      if (isVideoPremiumLocked(video, hasFullVideoAccess)) {
+        promptPremiumSubscribe(navigation);
+        return;
+      }
+      navigation.navigate('VideoPlayer', { videoId: video.id });
+    },
+    [hasFullVideoAccess, navigation],
+  );
 
-  const openChannel = (channelId: string) => {
-    navigation.navigate('ChannelDetail', { channelId });
-  };
+  const openChannelById = useCallback(
+    (channelId: string, hints?: { isPremium?: boolean }) => {
+      if (isChannelPremiumLocked(hints ?? {}, hasFullVideoAccess)) {
+        promptPremiumSubscribe(
+          navigation,
+          'Premium channel',
+          'Subscribe to browse this channel and add it for your child.',
+        );
+        return;
+      }
+      navigation.navigate('ChannelDetail', { channelId });
+    },
+    [hasFullVideoAccess, navigation],
+  );
+
+  const openChannel = useCallback(
+    (channel: BrowseChannel) => {
+      openChannelById(channel.id, { isPremium: channel.isPremium });
+    },
+    [openChannelById],
+  );
+
+  const handleAddVideo = useCallback(
+    (video: BrowseVideo) => {
+      if (isVideoPremiumLocked(video, hasFullVideoAccess)) {
+        promptPremiumSubscribe(navigation);
+        return;
+      }
+      requestToggleVideo(video);
+    },
+    [hasFullVideoAccess, navigation, requestToggleVideo],
+  );
+
+  const handleAddChannel = useCallback(
+    (channel: BrowseChannel) => {
+      if (!hasFullVideoAccess) {
+        promptPremiumSubscribe(
+          navigation,
+          'Subscribe for channels',
+          'Free plan includes up to 10 individual videos. Subscribe to add whole channels.',
+        );
+        return;
+      }
+      if (isChannelPremiumLocked(channel, hasFullVideoAccess)) {
+        promptPremiumSubscribe(
+          navigation,
+          'Premium channel',
+          'Subscribe to add this channel for your child.',
+        );
+        return;
+      }
+      requestToggleChannel(channel);
+    },
+    [hasFullVideoAccess, navigation, requestToggleChannel],
+  );
 
   const loadContent = useCallback(
     async (pageNum: number, append: boolean) => {
-      if (tab === 'channels' && !canBrowseChannels) {
-        setChannels([]);
-        setHasMore(false);
-        setLoading(false);
-        setLoadingMore(false);
-        return;
-      }
-
       const isMediaTab = tab === 'videos' || tab === 'shorts';
       if (isMediaTab && !hasFullVideoAccess && append) return;
 
@@ -124,7 +187,7 @@ export default function ContentDiscoveryScreen() {
       else setLoading(true);
       setError('');
       try {
-        const mediaLimit = hasFullVideoAccess ? 20 : freeVideoLimit;
+        const pageSize = 20;
         const params = {
           search: searchQuery || undefined,
           categoryId: selectedCategoryId ?? undefined,
@@ -135,14 +198,34 @@ export default function ContentDiscoveryScreen() {
         if (isMediaTab) {
           const res = await browseVideos({
             ...params,
-            limit: mediaLimit,
+            limit: pageSize,
             contentType: tab === 'shorts' ? 'SHORT' : 'VIDEO',
           });
-          setVideos((prev) => (append ? [...prev, ...res.data] : res.data));
+          setVideos((prev) => {
+            const next = append ? [...prev, ...res.data] : res.data;
+            prefetchBrowseThumbnails(
+              next,
+              append ? prev.length : 0,
+              res.data.length + 4,
+            );
+            return next;
+          });
+          if (hasFullVideoAccess && pageNum < res.meta.totalPages) {
+            void browseVideos({
+              ...params,
+              limit: pageSize,
+              page: pageNum + 1,
+              contentType: tab === 'shorts' ? 'SHORT' : 'VIDEO',
+            });
+          }
           setHasMore(hasFullVideoAccess && pageNum < res.meta.totalPages);
         } else {
-          const res = await browseChannels({ ...params, limit: 20 });
-          setChannels((prev) => (append ? [...prev, ...res.data] : res.data));
+          const res = await browseChannels({ ...params, limit: pageSize });
+          setChannels((prev) => {
+            const next = append ? [...prev, ...res.data] : res.data;
+            prefetchChannelThumbnails(next.slice(-pageSize));
+            return next;
+          });
           setHasMore(pageNum < res.meta.totalPages);
         }
       } catch (err) {
@@ -163,8 +246,6 @@ export default function ContentDiscoveryScreen() {
       selectedCategoryId,
       selectedLanguageId,
       hasFullVideoAccess,
-      canBrowseChannels,
-      freeVideoLimit,
       navigation,
     ],
   );
@@ -175,76 +256,145 @@ export default function ContentDiscoveryScreen() {
     return () => clearTimeout(timer);
   }, [loadContent]);
 
-  const showChannelPaywall = tab === 'channels' && !canBrowseChannels;
   const isShortsGrid = tab === 'shorts';
 
-  const listHeader = (
-    <>
-      <View style={[styles.header, { paddingTop: safeTop + 8 }]}>
-        <DiscoverHeroHeader />
-        <SelectedChildBar
-          children={apiChildren}
-          activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
-          onPress={openPickerForSelect}
-        />
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search videos, shorts, or channels..."
-          compact
-        />
-        <DiscoverSegmentTabs value={tab} onChange={setTab} />
-        <DiscoverCompactFilters
-          categories={categories}
-          languages={languages}
-          selectedCategoryId={selectedCategoryId}
-          selectedLanguageId={selectedLanguageId}
-          onCategoryChange={setSelectedCategoryId}
-          onLanguageChange={setSelectedLanguageId}
-        />
-        {!hasFullVideoAccess && tab !== 'channels' ? (
-          <Pressable
-            style={styles.freeHint}
-            onPress={() => navigation.navigate('Subscription')}
-          >
-            <Icon name="sparkles" size={13} color={colors.primary} />
-            <Text style={[styles.freeHintText, { color: colors.textMuted }]}>
-              {freeVideoLimit} free {tab === 'shorts' ? 'shorts' : 'videos'} · unlock all
-            </Text>
-            <Icon name="chevron-forward" size={12} color={colors.primary} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {error ? (
-        <View style={[styles.errorBox, { backgroundColor: colors.danger + '12' }]}>
-          <Icon name="alert-circle" size={16} color={colors.danger} />
-          <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+  const listHeader = useMemo(
+    () => (
+      <>
+        <View style={[styles.header, { paddingTop: safeTop + 8 }]}>
+          <DiscoverHeroHeader />
+          {!pickerVisible ? (
+            <SelectedChildBar
+              children={apiChildren}
+              activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
+              onPress={openPickerForSelect}
+            />
+          ) : null}
+          <SearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search videos, shorts, or channels..."
+            compact
+          />
+          <DiscoverSegmentTabs value={tab} onChange={setTab} />
+          <DiscoverCompactFilters
+            categories={categories}
+            languages={languages}
+            selectedCategoryId={selectedCategoryId}
+            selectedLanguageId={selectedLanguageId}
+            onCategoryChange={setSelectedCategoryId}
+            onLanguageChange={setSelectedLanguageId}
+          />
+          {!hasFullVideoAccess && tab !== 'channels' ? (
+            <Pressable
+              style={styles.freeHint}
+              onPress={() => navigation.navigate('Subscription')}
+            >
+              <Icon name="sparkles" size={13} color={colors.primary} />
+              <Text style={[styles.freeHintText, { color: colors.textMuted }]}>
+                Free: add up to {freeMaxAssignments} videos · {freeVideoLimit} browse · subscribe for channels
+              </Text>
+              <Icon name="chevron-forward" size={12} color={colors.primary} />
+            </Pressable>
+          ) : null}
+          {!hasFullVideoAccess && tab === 'channels' ? (
+            <Pressable
+              style={styles.freeHint}
+              onPress={() => navigation.navigate('Subscription')}
+            >
+              <Icon name="albums-outline" size={13} color={colors.primary} />
+              <Text style={[styles.freeHintText, { color: colors.textMuted }]}>
+                Channels require a subscription · free plan includes {freeMaxAssignments} individual videos
+              </Text>
+              <Icon name="chevron-forward" size={12} color={colors.primary} />
+            </Pressable>
+          ) : null}
         </View>
-      ) : null}
-    </>
+
+        {error ? (
+          <View style={[styles.errorBox, { backgroundColor: colors.danger + '12' }]}>
+            <Icon name="alert-circle" size={16} color={colors.danger} />
+            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+          </View>
+        ) : null}
+      </>
+    ),
+    [
+      safeTop,
+      pickerVisible,
+      apiChildren,
+      activeChildId,
+      openPickerForSelect,
+      searchQuery,
+      tab,
+      categories,
+      languages,
+      selectedCategoryId,
+      selectedLanguageId,
+      hasFullVideoAccess,
+      freeMaxAssignments,
+      freeVideoLimit,
+      error,
+      colors.primary,
+      colors.textMuted,
+      colors.danger,
+      navigation,
+    ],
+  );
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    const next = page + 1;
+    setPage(next);
+    void loadContent(next, true);
+  }, [hasMore, loadContent, loadingMore, page]);
+
+  const renderChannelItem = useCallback(
+    ({ item }: { item: BrowseChannel }) => (
+      <DiscoverChannelCard
+        channel={item}
+        premiumLocked={isChannelPremiumLocked(item, hasFullVideoAccess)}
+        onPress={() => openChannel(item)}
+        onAdd={() => handleAddChannel(item)}
+        assignState={getChannelAssignState(item.id)}
+      />
+    ),
+    [getChannelAssignState, handleAddChannel, hasFullVideoAccess, openChannel],
+  );
+
+  const renderVideoItem = useCallback(
+    ({ item }: { item: BrowseVideo }) => (
+      <DiscoverMediaCard
+        item={item}
+        layout={isShortsGrid ? 'short' : 'video'}
+        premiumLocked={isVideoPremiumLocked(item, hasFullVideoAccess)}
+        onPress={() => openVideo(item)}
+        onChannelPress={() => openChannelById(item.channelId, { isPremium: item.isPremium })}
+        onAdd={() => handleAddVideo(item)}
+        assignState={getVideoAssignState(item.id, item.channelId)}
+      />
+    ),
+    [
+      getVideoAssignState,
+      handleAddVideo,
+      hasFullVideoAccess,
+      isShortsGrid,
+      openChannelById,
+      openVideo,
+    ],
+  );
+
+  const listFooter = useMemo(
+    () =>
+      loadingMore ? (
+        <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+      ) : null,
+    [colors.primary, loadingMore],
   );
 
   return (
     <GradientBackground variant="subtle">
-      {showChannelPaywall ? (
-        <>
-          {listHeader}
-          <View style={styles.gate}>
-          <Icon name="lock-closed" size={44} color={colors.primary} />
-          <Text style={[styles.gateTitle, { color: colors.text }]}>Channels are premium</Text>
-          <Text style={[styles.gateText, { color: colors.textMuted }]}>
-            Open any video to explore its channel, or subscribe to browse all channels.
-          </Text>
-          <Pressable
-            style={[styles.gateBtn, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate('Subscription')}
-          >
-            <Text style={styles.gateBtnText}>View plans</Text>
-          </Pressable>
-          </View>
-        </>
-      ) : loading && videos.length === 0 && channels.length === 0 ? (
+      {loading && videos.length === 0 && channels.length === 0 ? (
         <>
           {listHeader}
           <ActivityIndicator style={styles.loader} color={colors.primary} />
@@ -261,25 +411,12 @@ export default function ContentDiscoveryScreen() {
             keyExtractor={(item) => item.id}
             ListHeaderComponent={listHeader}
             contentContainerStyle={[styles.list, { paddingBottom: listBottomPad }]}
-            renderItem={({ item }) => (
-              <DiscoverChannelCard
-                channel={item}
-                onPress={() => openChannel(item.id)}
-                onAdd={() => requestToggleChannel(item)}
-                assignState={getChannelAssignState(item.id)}
-              />
-            )}
-            onEndReached={() => {
-              if (!loadingMore && hasMore) {
-                const next = page + 1;
-                setPage(next);
-                void loadContent(next, true);
-              }
-            }}
+            renderItem={renderChannelItem}
+            onEndReached={loadMore}
             onEndReachedThreshold={0.4}
-            ListFooterComponent={
-              loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} /> : null
-            }
+            ListFooterComponent={listFooter}
+            keyboardShouldPersistTaps="handled"
+            removeClippedSubviews
           />
         )
       ) : videos.length === 0 ? (
@@ -300,32 +437,21 @@ export default function ContentDiscoveryScreen() {
           ListHeaderComponent={listHeader}
           contentContainerStyle={[styles.list, { paddingBottom: listBottomPad }]}
           columnWrapperStyle={isShortsGrid ? styles.gridRow : undefined}
-          renderItem={({ item }) => (
-            <DiscoverMediaCard
-              item={item}
-              layout={isShortsGrid ? 'short' : 'video'}
-              onPress={() => openVideo(item.id)}
-              onChannelPress={() => openChannel(item.channelId)}
-              onAdd={() => requestToggleVideo(item)}
-              assignState={getVideoAssignState(item.id, item.channelId)}
-            />
-          )}
-          onEndReached={() => {
-            if (!loadingMore && hasMore) {
-              const next = page + 1;
-              setPage(next);
-              void loadContent(next, true);
-            }
-          }}
+          renderItem={renderVideoItem}
+          onEndReached={loadMore}
           onEndReachedThreshold={0.4}
-          ListFooterComponent={
-            loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} /> : null
-          }
+          ListFooterComponent={listFooter}
+          keyboardShouldPersistTaps="handled"
+          removeClippedSubviews
         />
       )}
       <ChildProfilePickerModal
         visible={pickerVisible}
         children={apiChildren}
+        loading={pickerLoading}
+        assigningChildId={assigningChildId}
+        activeChildId={activeChildId}
+        selectOnly={pickerSelectOnly}
         onClose={closePicker}
         onSelect={(id) => void confirmChild(id)}
       />

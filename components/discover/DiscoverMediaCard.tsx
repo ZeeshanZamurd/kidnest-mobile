@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { memo } from 'react';
 import {
   Dimensions,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -9,10 +8,13 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
+import { BRAND_ACCENT, BRAND_PRIMARY } from '../../constants/branding';
 import { useTheme } from '../../context/ThemeContext';
 import { formatDuration, type BrowseVideo } from '../../api/browse';
 import { radius, spacing, typography } from '../../theme/colors';
 import AssignActionButton, { type AssignButtonState } from './AssignActionButton';
+import PremiumContentBadge, { PremiumLockOverlay } from '../ui/PremiumContentBadge';
+import CachedImage from '../ui/CachedImage';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD = spacing.lg;
@@ -28,17 +30,19 @@ type Props = {
   onChannelPress?: () => void;
   onAdd?: () => void;
   assignState?: AssignButtonState;
+  premiumLocked?: boolean;
   layout?: Layout;
   /** @deprecated use layout */
   variant?: 'grid' | 'list';
 };
 
-export default function DiscoverMediaCard({
+function DiscoverMediaCard({
   item,
   onPress,
   onChannelPress,
   onAdd,
   assignState = 'idle',
+  premiumLocked = false,
   layout = 'video',
   variant,
 }: Props) {
@@ -50,7 +54,7 @@ export default function DiscoverMediaCard({
       <View style={styles.gridWrap}>
         <Pressable onPress={onPress} style={styles.gridPress}>
           <View style={styles.gridThumb}>
-            <Image source={{ uri: item.thumbnailUrl ?? '' }} style={styles.thumbImage} />
+            <CachedImage uri={item.thumbnailUrl} style={styles.thumbImage} />
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.75)']}
               style={styles.gridGradient}
@@ -59,6 +63,12 @@ export default function DiscoverMediaCard({
               <Icon name="flash" size={9} color="#fff" />
               <Text style={styles.shortTagText}>Short</Text>
             </View>
+            {premiumLocked ? (
+              <>
+                <PremiumContentBadge compact style={styles.premiumBadgeShort} />
+                <PremiumLockOverlay compact />
+              </>
+            ) : null}
             <View style={styles.durationBadge}>
               <Text style={styles.durationText}>{formatDuration(item.durationSecs)}</Text>
             </View>
@@ -80,12 +90,14 @@ export default function DiscoverMediaCard({
               {item.channelName}
             </Text>
           </Pressable>
-          {onAdd ? (
+          {onAdd && !premiumLocked ? (
             <AssignActionButton
               state={assignState}
               onPress={onAdd}
               variant="inline"
             />
+          ) : premiumLocked ? (
+            <Icon name="lock-closed" size={20} color={colors.textMuted} />
           ) : null}
         </View>
       </View>
@@ -96,11 +108,17 @@ export default function DiscoverMediaCard({
     <View style={styles.videoWrap}>
       <Pressable onPress={onPress} style={styles.videoThumbPress}>
         <View style={styles.videoThumb}>
-          <Image source={{ uri: item.thumbnailUrl ?? '' }} style={styles.thumbImage} />
+          <CachedImage uri={item.thumbnailUrl} style={styles.thumbImage} />
           <View style={styles.videoTag}>
             <Icon name="film-outline" size={10} color="#fff" />
             <Text style={styles.videoTagText}>Video</Text>
           </View>
+          {premiumLocked ? (
+            <>
+              <PremiumContentBadge style={styles.premiumBadgeVideo} />
+              <PremiumLockOverlay />
+            </>
+          ) : null}
           <View style={styles.durationBadge}>
             <Text style={styles.durationText}>{formatDuration(item.durationSecs)}</Text>
           </View>
@@ -128,13 +146,18 @@ export default function DiscoverMediaCard({
           <Icon name="chevron-forward" size={14} color={colors.textMuted} />
         ) : null}
       </Pressable>
-      {onAdd ? (
+      {onAdd && !premiumLocked ? (
         <AssignActionButton
           state={assignState}
           onPress={onAdd}
           variant="full"
           style={styles.addBtnSpacing}
         />
+      ) : premiumLocked ? (
+        <View style={[styles.premiumHint, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+          <Icon name="diamond" size={14} color={colors.primary} />
+          <Text style={[styles.premiumHintText, { color: colors.primary }]}>Subscribe to add</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -173,7 +196,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#EC4899',
+    backgroundColor: BRAND_ACCENT,
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: radius.sm,
@@ -239,7 +262,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#7C3AED',
+    backgroundColor: BRAND_PRIMARY,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: radius.sm,
@@ -301,4 +324,31 @@ const styles = StyleSheet.create({
   addBtnSpacing: {
     marginTop: 8,
   },
+  premiumBadgeShort: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  premiumBadgeVideo: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+  },
+  premiumHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  premiumHintText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });
+
+export default memo(DiscoverMediaCard);

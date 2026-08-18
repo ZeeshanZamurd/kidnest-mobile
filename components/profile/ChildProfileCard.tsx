@@ -58,7 +58,7 @@ export default function ChildProfileCard({
           {t('streak', { count: child.streakDays })}
         </Text>
       </View>
-      {onTogglePause && (
+      {onTogglePause ? (
         <Pressable onPress={onTogglePause} hitSlop={12}>
           <Icon
             name={child.isPaused ? 'play-circle' : 'pause-circle'}
@@ -66,7 +66,8 @@ export default function ChildProfileCard({
             color={child.isPaused ? colors.success : colors.warning}
           />
         </Pressable>
-      )}
+      ) : null}
+      <Icon name="chevron-forward" size={20} color={colors.textMuted} />
     </Pressable>
   );
 }

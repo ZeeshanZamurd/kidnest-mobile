@@ -2,11 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
-  FlatList,
   Image,
   Linking,
-  PanResponder,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -20,32 +17,28 @@ import { useRoute, useNavigation, useFocusEffect, RouteProp } from '@react-navig
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video, { type VideoRef } from 'react-native-video';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fetchVideoById, formatDuration, type VideoDetail } from '../../api/browse';
+import { fetchVideoById, type VideoDetail, type VideoStream } from '../../api/browse';
 import { recordChildWatch } from '../../api/watch';
 import { useAppStore } from '../../store/useAppStore';
 import { useChildLibrary } from '../../hooks/useChildLibrary';
+import { useChildFavorites } from '../../hooks/useChildFavorites';
 import { normalizeCategory } from '../../utils/videoMapper';
-import VideoCard from '../../components/video/VideoCard';
-import { typography, radius, spacing } from '../../theme/colors';
+import VideoDetailPanel from '../../components/video/VideoDetailPanel';
+import VideoPlayerOverlay from '../../components/video/player/VideoPlayerOverlay';
+import VideoPosterLoader from '../../components/video/player/VideoPosterLoader';
+import PlayerVideoShelf from '../../components/video/player/PlayerVideoShelf';
+import { playerTheme } from '../../components/video/player/playerTheme';
+import { BRAND_PRIMARY } from '../../constants/branding';
 import type { RootStackParamList } from '../../navigation/types';
+import { markPlaybackStarted, shouldShowVideoBuffering } from '../../utils/videoBuffering';
+import { buildCachedVideoSource } from '../../services/cache/videoCache';
 
 const { width } = Dimensions.get('window');
 const SHORT_WIDTH = Math.min(width * 0.55, 260);
 const SHORT_HEIGHT = Math.round((SHORT_WIDTH * 16) / 9);
-const DESCRIPTION_PREVIEW_LINES = 2;
-const DESCRIPTION_COLLAPSE_CHARS = 100;
-const CONTROLS_HIDE_MS = 3000;
-const CONTROLS_HEIGHT = 92;
-const THUMB_SIZE = 12;
-/** Target ~1 minute of media buffered ahead of playback (YouTube-style). */
 const BUFFER_AHEAD_MS = 60_000;
 const VIDEO_BUFFER_CONFIG = {
   minBufferMs: BUFFER_AHEAD_MS,
@@ -54,105 +47,6 @@ const VIDEO_BUFFER_CONFIG = {
   bufferForPlaybackAfterRebufferMs: 5_000,
 };
 const PREFERRED_FORWARD_BUFFER_SECONDS = 60;
-
-function SeekBar({
-  progress,
-  buffered,
-  duration,
-  onSeek,
-  onSeekStart,
-  onSeekEnd,
-}: {
-  progress: number;
-  buffered: number;
-  duration: number;
-  onSeek: (time: number) => void;
-  onSeekStart: () => void;
-  onSeekEnd: () => void;
-}) {
-  const trackWidth = useRef(0);
-  const trackWidthShared = useSharedValue(0);
-  const progressShared = useSharedValue(0);
-  const bufferedShared = useSharedValue(0);
-  const scrubbingRef = useRef(false);
-
-  useEffect(() => {
-    if (!scrubbingRef.current) {
-      progressShared.value = progress;
-    }
-  }, [progress, progressShared]);
-
-  useEffect(() => {
-    bufferedShared.value = buffered;
-  }, [buffered, bufferedShared]);
-
-  const seekAtX = useCallback(
-    (x: number) => {
-      if (duration <= 0 || trackWidth.current <= 0) return;
-      const ratio = Math.max(0, Math.min(1, x / trackWidth.current));
-      progressShared.value = ratio;
-      onSeek(ratio * duration);
-    },
-    [duration, onSeek, progressShared],
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => {
-          scrubbingRef.current = true;
-          onSeekStart();
-          seekAtX(evt.nativeEvent.locationX);
-        },
-        onPanResponderMove: (evt) => {
-          seekAtX(evt.nativeEvent.locationX);
-        },
-        onPanResponderRelease: () => {
-          scrubbingRef.current = false;
-          onSeekEnd();
-        },
-        onPanResponderTerminate: () => {
-          scrubbingRef.current = false;
-          onSeekEnd();
-        },
-      }),
-    [onSeekEnd, onSeekStart, seekAtX],
-  );
-
-  const bufferStyle = useAnimatedStyle(() => ({
-    width: trackWidthShared.value * bufferedShared.value,
-  }));
-
-  const fillStyle = useAnimatedStyle(() => ({
-    width: trackWidthShared.value * progressShared.value,
-  }));
-
-  const thumbStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: trackWidthShared.value * progressShared.value - THUMB_SIZE / 2 },
-    ],
-  }));
-
-  return (
-    <View
-      style={styles.progressTrackHit}
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout.width;
-        trackWidth.current = w;
-        trackWidthShared.value = w;
-      }}
-      {...panResponder.panHandlers}
-    >
-      <View style={styles.progressTrack}>
-        <Animated.View style={[styles.progressBuffer, bufferStyle]} />
-        <Animated.View style={[styles.progressFill, fillStyle]} />
-      </View>
-      <Animated.View style={[styles.progressThumb, thumbStyle]} />
-    </View>
-  );
-}
 
 type Route = RouteProp<RootStackParamList, 'VideoPlayer'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -167,32 +61,26 @@ function resolveWatchUrl(video: VideoDetail): string | null {
   return null;
 }
 
-function formatPlaybackTime(secs: number): string {
-  if (!Number.isFinite(secs) || secs < 0) return '0:00';
-  const total = Math.floor(secs);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 export default function VideoPlayerScreen() {
   const { t } = useTranslation();
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const videoHeight = Math.round((windowWidth * 9) / 16);
+  const videoHeight = Math.round(windowWidth * (9 / 16));
   const role = useAppStore((s) => s.role);
   const activeChildId = useAppStore((s) => s.activeChildId);
+  const autoplayEnabled = useAppStore((s) => s.autoplayEnabled);
   const toggleFavorite = useAppStore((s) => s.toggleVideoFavorite);
-  const { getRelatedVideos, isChannelAssigned } = useChildLibrary(
+  const { toggleVideo, toggleChannel, isVideoFavorite, isChannelFavorite } =
+    useChildFavorites(role === 'child' ? activeChildId : null);
+  const { getRelatedVideos, getNextVideo, getPrevVideo, isChannelAssigned } = useChildLibrary(
     role === 'child' ? activeChildId : null,
   );
+
   const [paused, setPaused] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [immersiveFullscreen, setImmersiveFullscreen] = useState(false);
   const [playbackTime, setPlaybackTime] = useState({ current: 0, duration: 0 });
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [descriptionTruncated, setDescriptionTruncated] = useState(false);
   const [video, setVideo] = useState<VideoDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -203,16 +91,22 @@ export default function VideoPlayerScreen() {
   const [bufferedSecs, setBufferedSecs] = useState(0);
   const progressRef = useRef({ current: 0, duration: 0 });
   const videoRef = useRef<VideoRef>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const loadRequestRef = useRef(0);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const controlsOpacity = useSharedValue(1);
+  const loadedVideoIdRef = useRef<string | null>(null);
+  const qualityChangeRef = useRef(false);
+  const [switchingVideo, setSwitchingVideo] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
+  const [qualityMenuVisible, setQualityMenuVisible] = useState(false);
+  const [shelfVisible, setShelfVisible] = useState(false);
 
   const flushProgress = useCallback(() => {
     if (role !== 'child' || !activeChildId || !video) return;
     const { current, duration } = progressRef.current;
     if (duration <= 0 || current <= 3) return;
-    const progressPercent = Math.min(100, (current / duration) * 100);
     void recordChildWatch(activeChildId, video.id, {
-      progressPercent,
+      progressPercent: Math.min(100, (current / duration) * 100),
       watchedSecs: Math.floor(current),
     }).catch(() => {});
   }, [role, activeChildId, video]);
@@ -224,135 +118,215 @@ export default function VideoPlayerScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    setError('');
+  const resetPlayback = useCallback(() => {
     setPaused(false);
     setPlaybackTime({ current: 0, duration: 0 });
-    setDescriptionExpanded(false);
-    setDescriptionTruncated(false);
-    setControlsVisible(true);
-    clearHideControlsTimer();
     progressRef.current = { current: 0, duration: 0 };
-    void fetchVideoById(route.params.videoId)
-      .then(setVideo)
-      .catch((err) => {
+    loadedVideoIdRef.current = null;
+    setHasDisplayedFrame(false);
+    setIsBuffering(true);
+    setBufferedSecs(0);
+    setIsSeeking(false);
+    setControlsVisible(true);
+    setSelectedQuality(null);
+    setQualityMenuVisible(false);
+    setShelfVisible(false);
+    clearHideControlsTimer();
+  }, [clearHideControlsTimer]);
+
+  const loadVideo = useCallback(
+    async (videoId: string, { scrollToTop = true }: { scrollToTop?: boolean } = {}) => {
+      if (videoId === video?.id) return;
+      flushProgress();
+      resetPlayback();
+      const reqId = ++loadRequestRef.current;
+      setSwitchingVideo(true);
+      setError('');
+      try {
+        const next = await fetchVideoById(videoId);
+        if (loadRequestRef.current !== reqId) return;
+        setVideo(next);
+        if (scrollToTop) {
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+        }
+      } catch (err) {
+        if (loadRequestRef.current !== reqId) return;
         setError(err instanceof Error ? err.message : 'Could not load video');
-        setVideo(null);
+      } finally {
+        if (loadRequestRef.current === reqId) setSwitchingVideo(false);
+      }
+    },
+    [video?.id, flushProgress, resetPlayback],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    resetPlayback();
+    void fetchVideoById(route.params.videoId)
+      .then((v) => {
+        if (!cancelled) setVideo(v);
       })
-      .finally(() => setLoading(false));
-  }, [route.params.videoId, clearHideControlsTimer]);
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load video');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route.params.videoId, resetPlayback]);
+
+  useEffect(() => {
+    if (!video || video.contentType !== 'SHORT' || role !== 'child') return;
+    navigation.replace('ChildTabs', {
+      screen: 'ChildFeed',
+      params: { videoId: video.id, channelId: video.channelId },
+    });
+  }, [video, role, navigation]);
 
   const scheduleHideControls = useCallback(() => {
     clearHideControlsTimer();
-    hideControlsTimer.current = setTimeout(() => {
-      setControlsVisible(false);
-    }, CONTROLS_HIDE_MS);
+    hideControlsTimer.current = setTimeout(
+      () => setControlsVisible(false),
+      playerTheme.controlsHideMs,
+    );
   }, [clearHideControlsTimer]);
 
-  const revealControls = useCallback(() => {
-    setControlsVisible(true);
-  }, []);
+  const revealControls = useCallback(() => setControlsVisible(true), []);
 
   useEffect(() => {
-    controlsOpacity.value = withTiming(controlsVisible ? 1 : 0, { duration: 220 });
-  }, [controlsVisible, controlsOpacity]);
-
-  useEffect(() => {
-    if (paused || isSeeking) {
+    if (paused || isSeeking || (immersiveFullscreen && shelfVisible)) {
       revealControls();
       clearHideControlsTimer();
       return;
     }
-    if (controlsVisible) {
-      scheduleHideControls();
-    }
+    if (controlsVisible) scheduleHideControls();
     return clearHideControlsTimer;
   }, [
     paused,
     isSeeking,
+    shelfVisible,
+    immersiveFullscreen,
     controlsVisible,
     revealControls,
     clearHideControlsTimer,
     scheduleHideControls,
   ]);
 
-  const controlsOverlayStyle = useAnimatedStyle(() => ({
-    opacity: controlsOpacity.value,
-  }));
+  useEffect(() => {
+    if (!immersiveFullscreen) return;
+    if (!controlsVisible) setShelfVisible(false);
+  }, [controlsVisible, immersiveFullscreen]);
 
   const restorePortrait = useCallback(() => {
     lockToPortrait();
-    if (Platform.OS === 'android') {
-      StatusBar.setHidden(false, 'fade');
-    }
+    StatusBar.setHidden(false, 'fade');
   }, []);
 
-  const exitFullscreen = useCallback(() => {
-    setFullscreen(false);
+  const exitImmersiveFullscreen = useCallback(() => {
+    setImmersiveFullscreen(false);
     restorePortrait();
   }, [restorePortrait]);
 
   const toggleFullscreen = useCallback(() => {
-    setFullscreen((prev) => {
-      if (prev) {
-        restorePortrait();
-        return false;
-      }
-      lockToLandscape();
-      if (Platform.OS === 'android') {
-        StatusBar.setHidden(true, 'fade');
-      }
-      return true;
-    });
-  }, [restorePortrait]);
+    if (video?.contentType === 'SHORT') return;
+    if (immersiveFullscreen) {
+      exitImmersiveFullscreen();
+      return;
+    }
+    lockToLandscape();
+    StatusBar.setHidden(true, 'fade');
+    setImmersiveFullscreen(true);
+  }, [exitImmersiveFullscreen, immersiveFullscreen, video?.contentType]);
 
   useFocusEffect(
-    useCallback(() => {
-      return () => {
+    useCallback(
+      () => () => {
+        setImmersiveFullscreen(false);
         setPaused(true);
-        setFullscreen(false);
         setControlsVisible(true);
         clearHideControlsTimer();
         restorePortrait();
         flushProgress();
-      };
-    }, [flushProgress, restorePortrait, clearHideControlsTimer]),
+      },
+      [flushProgress, restorePortrait, clearHideControlsTimer],
+    ),
   );
 
-  const togglePlayPause = useCallback(() => {
-    setPaused((prev) => !prev);
+  const seekTo = useCallback(
+    (time: number) => {
+      const duration = progressRef.current.duration || playbackTime.duration;
+      const clamped = Math.max(0, Math.min(time, duration || time));
+      videoRef.current?.seek(clamped);
+      progressRef.current = { current: clamped, duration };
+      setPlaybackTime((p) => ({ ...p, current: clamped, duration: duration || p.duration }));
+    },
+    [playbackTime.duration],
+  );
+
+  const relatedVideos = useMemo(() => {
+    if (!video || role !== 'child') return [];
+    const cat = normalizeCategory(video.primaryCategory?.slug ?? video.categories[0]?.slug);
+    return getRelatedVideos(video.id, cat, 12, video.contentType);
+  }, [video, role, getRelatedVideos]);
+
+  const nextVideo = useMemo(() => {
+    if (!video || role !== 'child') return null;
+    const cat = normalizeCategory(video.primaryCategory?.slug ?? video.categories[0]?.slug);
+    return getNextVideo(video.id, cat, video.contentType);
+  }, [video, role, getNextVideo]);
+
+  const prevVideo = useMemo(() => {
+    if (!video || role !== 'child') return null;
+    const cat = normalizeCategory(video.primaryCategory?.slug ?? video.categories[0]?.slug);
+    return getPrevVideo(video.id, cat, video.contentType);
+  }, [video, role, getPrevVideo]);
+
+  const suggestedVideos = useMemo(
+    () => (nextVideo ? relatedVideos.filter((v) => v.id !== nextVideo.id) : relatedVideos),
+    [relatedVideos, nextVideo],
+  );
+
+  const shelfVideos = useMemo(() => {
+    if (!video || role !== 'child') return [];
+    const items = [...relatedVideos];
+    if (nextVideo && !items.some((v) => v.id === nextVideo.id)) {
+      items.unshift(nextVideo);
+    }
+    return items.slice(0, 16);
+  }, [video, role, relatedVideos, nextVideo]);
+
+  const toggleShelf = useCallback(() => {
+    setShelfVisible((v) => !v);
   }, []);
 
-  const handleVideoTap = useCallback(() => {
-    if (!controlsVisible) {
-      revealControls();
+  const goToVideo = useCallback(
+    (videoId: string, contentType?: VideoDetail['contentType']) => {
+      if (contentType === 'SHORT' && role === 'child') {
+        navigation.replace('ChildTabs', {
+          screen: 'ChildFeed',
+          params: { videoId, channelId: video?.channelId },
+        });
+        return;
+      }
+      void loadVideo(videoId);
+    },
+    [loadVideo, navigation, role, video?.channelId],
+  );
+
+  const shouldAutoplayNext = autoplayEnabled && role === 'child' && Boolean(nextVideo);
+
+  const handleVideoEnd = useCallback(() => {
+    flushProgress();
+    if (shouldAutoplayNext && nextVideo) {
+      goToVideo(nextVideo.id, nextVideo.contentType);
       return;
     }
-    togglePlayPause();
-  }, [controlsVisible, revealControls, togglePlayPause]);
-
-  const handleControlInteraction = useCallback(() => {
-    revealControls();
-  }, [revealControls]);
-
-  const handleSeekStart = useCallback(() => {
-    setIsSeeking(true);
-    revealControls();
-    clearHideControlsTimer();
-  }, [revealControls, clearHideControlsTimer]);
-
-  const handleSeekEnd = useCallback(() => {
-    setIsSeeking(false);
-  }, []);
-
-  const seekTo = useCallback((time: number) => {
-    const duration = progressRef.current.duration || playbackTime.duration;
-    const clamped = Math.max(0, Math.min(time, duration || time));
-    videoRef.current?.seek(clamped);
-    progressRef.current = { current: clamped, duration };
-    setPlaybackTime((prev) => ({ ...prev, current: clamped, duration: duration || prev.duration }));
-  }, [playbackTime.duration]);
+    setPaused(true);
+  }, [flushProgress, shouldAutoplayNext, nextVideo, goToVideo]);
 
   const openChannel = () => {
     if (!video) return;
@@ -365,638 +339,407 @@ export default function VideoPlayerScreen() {
     navigation.navigate('ChannelDetail', { channelId: video.channelId });
   };
 
-  const relatedVideos = useMemo(() => {
-    if (!video || role !== 'child') return [];
-    const category = normalizeCategory(
-      video.primaryCategory?.slug ?? video.categories[0]?.slug,
-    );
-    return getRelatedVideos(video.id, category);
-  }, [video, role, getRelatedVideos]);
-
   const channelNavigable = role !== 'child' || (video ? isChannelAssigned(video.channelId) : false);
-
   const isShort = video?.contentType === 'SHORT';
-  const streamUri = video?.streamUrl ?? null;
-  const watchUrl = useMemo(() => (video ? resolveWatchUrl(video) : null), [video]);
+  const useShortLayout = isShort && role !== 'child';
 
-  const videoSource = useMemo(
-    () =>
-      streamUri
-        ? {
-            uri: streamUri,
-            bufferConfig: VIDEO_BUFFER_CONFIG,
-          }
-        : undefined,
-    [streamUri],
+  const availableStreams = useMemo<VideoStream[]>(() => {
+    if (!video) return [];
+    if (video.streams?.length) return video.streams;
+    if (video.streamUrl) {
+      return [
+        {
+          quality: '1080p',
+          label: '1080p',
+          height: 1080,
+          streamUrl: video.streamUrl,
+          isDefault: true,
+        },
+      ];
+    }
+    return [];
+  }, [video]);
+
+  const activeStream = useMemo(() => {
+    if (!availableStreams.length) return null;
+    if (selectedQuality) {
+      return availableStreams.find((s) => s.quality === selectedQuality) ?? availableStreams[0];
+    }
+    return availableStreams.find((s) => s.isDefault) ?? availableStreams[0];
+  }, [availableStreams, selectedQuality]);
+
+  const streamUri = activeStream?.streamUrl ?? video?.streamUrl ?? null;
+  const watchUrl = useMemo(() => (video ? resolveWatchUrl(video) : null), [video]);
+  const videoSource = useMemo(() => buildCachedVideoSource(streamUri), [streamUri]);
+
+  const selectQuality = useCallback(
+    (quality: string) => {
+      if (quality === (selectedQuality ?? activeStream?.quality)) {
+        setQualityMenuVisible(false);
+        return;
+      }
+      const resumeAt = progressRef.current.current;
+      qualityChangeRef.current = true;
+      setHasDisplayedFrame(false);
+      setIsBuffering(true);
+      setSelectedQuality(quality);
+      setQualityMenuVisible(false);
+      setTimeout(() => {
+        videoRef.current?.seek(resumeAt);
+      }, 120);
+    },
+    [activeStream?.quality, selectedQuality],
   );
 
   useEffect(() => {
+    if (!controlsVisible) setQualityMenuVisible(false);
+  }, [controlsVisible]);
+
+  useEffect(() => {
     if (!streamUri) return;
+    if (qualityChangeRef.current) {
+      qualityChangeRef.current = false;
+      return;
+    }
     setHasDisplayedFrame(false);
     setIsBuffering(false);
     setBufferedSecs(0);
   }, [streamUri]);
 
-  const showBufferingOverlay = !hasDisplayedFrame || isBuffering;
-
   useEffect(() => {
     if (role !== 'child' || !activeChildId || !video || paused || !streamUri) return;
-    const interval = setInterval(flushProgress, 15000);
-    return () => clearInterval(interval);
+    const id = setInterval(flushProgress, 15000);
+    return () => clearInterval(id);
   }, [role, activeChildId, video, paused, streamUri, flushProgress]);
 
-  const openExternal = () => {
-    if (!watchUrl) return;
-    void Linking.openURL(watchUrl);
-  };
-
-  if (loading) {
+  if (!video) {
+    if (loading) {
+      return (
+        <LinearGradient colors={['#F7F4FF', '#FFF9FC']} style={styles.loading}>
+          <ActivityIndicator color={BRAND_PRIMARY} size="large" />
+        </LinearGradient>
+      );
+    }
     return (
-      <View style={styles.fallback}>
-        <ActivityIndicator color="#fff" size="large" />
-      </View>
-    );
-  }
-
-  if (!video || error) {
-    return (
-      <View style={styles.fallback}>
-        <Text style={styles.fallbackText}>{error || 'Video not found'}</Text>
-        <Pressable onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Text style={styles.backLinkText}>Go back</Text>
+      <LinearGradient colors={['#F7F4FF', '#FFF9FC']} style={styles.loading}>
+        <Text style={styles.errText}>{error || 'Video not found'}</Text>
+        <Pressable onPress={() => navigation.goBack()}>
+          <Text style={styles.backLink}>{t('go_back')}</Text>
         </Pressable>
-      </View>
+      </LinearGradient>
     );
   }
 
-  const videoWrapStyle = fullscreen
-    ? styles.videoWrapFullscreen
-    : isShort
-      ? styles.shortVideoWrap
-      : [styles.videoWrap, { height: videoHeight }];
+  const progress =
+    playbackTime.duration > 0 ? Math.min(1, playbackTime.current / playbackTime.duration) : 0;
+  const bufferedProgress =
+    playbackTime.duration > 0 ? Math.min(1, bufferedSecs / playbackTime.duration) : 0;
+  const showBuffering = shouldShowVideoBuffering(
+    hasDisplayedFrame,
+    isBuffering,
+    playbackTime.current,
+  );
+  const showPoster =
+    Boolean(video.thumbnailUrl) && (!hasDisplayedFrame || switchingVideo);
 
   const renderPlayer = () => {
-    if (streamUri) {
-      const progress =
-        playbackTime.duration > 0
-          ? Math.min(1, playbackTime.current / playbackTime.duration)
-          : 0;
-      const bufferedProgress =
-        playbackTime.duration > 0
-          ? Math.min(1, bufferedSecs / playbackTime.duration)
-          : 0;
-
+    if (!streamUri) {
       return (
-        <View style={videoWrapStyle}>
-          <Video
-            ref={videoRef}
-            source={videoSource}
-            style={[
-              fullscreen ? styles.videoFullscreen : isShort ? styles.shortVideo : styles.video,
-            ]}
-            resizeMode={isShort || fullscreen ? 'cover' : 'contain'}
-            paused={paused}
-            poster={video.thumbnailUrl ?? undefined}
-            posterResizeMode="cover"
-            controls={false}
-            progressUpdateInterval={250}
-            repeat
-            playInBackground={false}
-            playWhenInactive={false}
-            ignoreSilentSwitch="ignore"
-            preferredForwardBufferDuration={PREFERRED_FORWARD_BUFFER_SECONDS}
-            automaticallyWaitsToMinimizeStalling
-            bufferConfig={VIDEO_BUFFER_CONFIG}
-            onLoadStart={() => {
-              setHasDisplayedFrame(false);
-              setIsBuffering(true);
-            }}
-            onReadyForDisplay={() => {
-              setHasDisplayedFrame(true);
-            }}
-            onBuffer={(e) => {
-              setIsBuffering(e.isBuffering);
-            }}
-            onProgress={(e) => {
-              if (e.playableDuration > 0) {
-                setBufferedSecs(e.playableDuration);
-              }
-              if (isSeeking) return;
-              const duration =
-                e.seekableDuration > 0
-                  ? e.seekableDuration
-                  : video.durationSecs || e.playableDuration || 1;
-              progressRef.current = { current: e.currentTime, duration };
-              setPlaybackTime({ current: e.currentTime, duration });
-            }}
-            onLoad={(e) => {
-              const duration = e.duration || video.durationSecs || 0;
-              progressRef.current = { current: 0, duration };
-              setPlaybackTime({ current: 0, duration });
-            }}
-            onEnd={flushProgress}
-          />
-
-          {showBufferingOverlay && (
-            <View style={styles.bufferingOverlay} pointerEvents="none">
-              <ActivityIndicator color="#fff" size="large" />
-            </View>
-          )}
-
-          <Pressable
-            style={[styles.videoTapLayer, { bottom: controlsVisible ? CONTROLS_HEIGHT : 0 }]}
-            onPress={handleVideoTap}
-            accessibilityRole="button"
-            accessibilityLabel={paused ? t('play') : t('pause')}
-          />
-
-          <Animated.View
-            style={[styles.controlsChrome, controlsOverlayStyle]}
-            pointerEvents={controlsVisible ? 'box-none' : 'none'}
-          >
-            <LinearGradient
-              colors={['rgba(0,0,0,0.65)', 'transparent']}
-              style={styles.topControlsGradient}
-              pointerEvents="box-none"
-            >
-              <Pressable
-                style={styles.videoBackBtn}
-                onPress={() => {
-                  handleControlInteraction();
-                  if (fullscreen) {
-                    exitFullscreen();
-                    return;
-                  }
-                  navigation.goBack();
-                }}
-              >
-                <Icon name="chevron-back" size={26} color="#fff" />
-              </Pressable>
-            </LinearGradient>
-
-            {paused && hasDisplayedFrame && !isBuffering && (
-              <Pressable
-                style={[styles.playOverlay, { bottom: CONTROLS_HEIGHT }]}
-                onPress={() => {
-                  handleControlInteraction();
-                  togglePlayPause();
-                }}
-              >
-                <View style={styles.playPauseCircle}>
-                  <Icon name="play" size={40} color="#fff" />
-                </View>
-              </Pressable>
-            )}
-
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.85)']}
-              style={styles.controlsGradient}
-              pointerEvents="box-none"
-            >
-              <View style={styles.controlBar}>
-                <SeekBar
-                  progress={progress}
-                  buffered={bufferedProgress}
-                  duration={playbackTime.duration}
-                  onSeek={seekTo}
-                  onSeekStart={handleSeekStart}
-                  onSeekEnd={handleSeekEnd}
-                />
-                <View style={styles.controlsRow}>
-                  <Pressable
-                    style={styles.controlPlayBtn}
-                    onPress={() => {
-                      handleControlInteraction();
-                      togglePlayPause();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={paused ? t('play') : t('pause')}
-                  >
-                    <Icon name={paused ? 'play' : 'pause'} size={20} color="#fff" />
-                  </Pressable>
-                  <Text style={styles.timeText}>
-                    {formatPlaybackTime(playbackTime.current)}
-                    {' / '}
-                    {formatPlaybackTime(playbackTime.duration)}
-                  </Text>
-                  <Pressable
-                    style={styles.fullscreenBtn}
-                    onPress={() => {
-                      handleControlInteraction();
-                      toggleFullscreen();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={fullscreen ? t('exit_fullscreen') : t('fullscreen')}
-                  >
-                    <Icon name={fullscreen ? 'contract' : 'expand'} size={20} color="#fff" />
-                  </Pressable>
-                </View>
-              </View>
-            </LinearGradient>
-          </Animated.View>
-        </View>
+        <Pressable style={styles.playerFrame} onPress={() => watchUrl && Linking.openURL(watchUrl)}>
+          <Image source={{ uri: video.thumbnailUrl ?? '' }} style={styles.video} />
+          <View style={styles.ytOverlay}>
+            <Icon name="logo-youtube" size={40} color="#fff" />
+          </View>
+        </Pressable>
       );
     }
 
     return (
-      <Pressable style={videoWrapStyle} onPress={openExternal}>
-        <Image
-          source={{ uri: video.thumbnailUrl ?? '' }}
-          style={isShort ? styles.shortVideo : styles.video}
+      <View style={[styles.playerFrame, immersiveFullscreen && styles.playerFrameImmersive]}>
+        {showPoster && video.thumbnailUrl ? (
+          <VideoPosterLoader thumbnailUrl={video.thumbnailUrl} />
+        ) : null}
+
+        <Video
+          key={video.id}
+          ref={videoRef}
+          source={videoSource}
+          style={[
+            styles.video,
+            showPoster && styles.videoUntilReady,
+            isShort && !immersiveFullscreen && { width: SHORT_WIDTH, height: SHORT_HEIGHT, alignSelf: 'center' },
+            useShortLayout && !immersiveFullscreen && styles.videoShortParent,
+          ]}
+          resizeMode={isShort && !immersiveFullscreen ? 'cover' : 'contain'}
+          paused={paused}
+          poster={video.thumbnailUrl ?? undefined}
+          posterResizeMode="cover"
+          controls={false}
+          repeat={false}
+          progressUpdateInterval={250}
+          playInBackground={false}
+          playWhenInactive={false}
+          bufferConfig={VIDEO_BUFFER_CONFIG}
+          preferredForwardBufferDuration={PREFERRED_FORWARD_BUFFER_SECONDS}
+          onProgress={(e) => {
+            if (markPlaybackStarted(e.currentTime)) {
+              setHasDisplayedFrame(true);
+              setIsBuffering(false);
+            }
+            if (e.playableDuration > 0) setBufferedSecs(e.playableDuration);
+            if (isSeeking) return;
+            const duration =
+              e.seekableDuration > 0 ? e.seekableDuration : video.durationSecs || 1;
+            progressRef.current = { current: e.currentTime, duration };
+            setPlaybackTime({ current: e.currentTime, duration });
+          }}
+          onLoad={(e) => {
+            const d = e.duration || video.durationSecs || 0;
+            const isNewVideo = loadedVideoIdRef.current !== video.id;
+            const current = isNewVideo ? 0 : progressRef.current.current;
+            loadedVideoIdRef.current = video.id;
+            progressRef.current = { current, duration: d };
+            setPlaybackTime({ current, duration: d });
+          }}
+          onEnd={handleVideoEnd}
+          onBuffer={(e) => {
+            if (progressRef.current.current <= 0.25) setIsBuffering(e.isBuffering);
+          }}
+          onReadyForDisplay={() => {
+            setHasDisplayedFrame(true);
+            setIsBuffering(false);
+          }}
+          onLoadStart={() => {
+            setHasDisplayedFrame(false);
+            setIsBuffering(true);
+          }}
         />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={StyleSheet.absoluteFillObject} />
-        <View style={styles.externalPlay}>
-          <View style={styles.externalPlayCircle}>
-            <Icon name="logo-youtube" size={36} color="#fff" />
-          </View>
-          <Text style={styles.externalPlayText}>Tap to watch on YouTube</Text>
-        </View>
-      </Pressable>
+
+        <VideoPlayerOverlay
+          paused={paused}
+          controlsVisible={controlsVisible}
+          hasDisplayedFrame={hasDisplayedFrame}
+          isBuffering={showBuffering}
+          switchingVideo={switchingVideo}
+          immersiveFullscreen={immersiveFullscreen}
+          isShort={isShort}
+          duration={playbackTime.duration}
+          currentTime={playbackTime.current}
+          progress={progress}
+          buffered={bufferedProgress}
+          showPrev={role === 'child' && Boolean(prevVideo)}
+          showNext={role === 'child' && Boolean(nextVideo)}
+          insetsTop={insets.top}
+          insetsLeft={insets.left}
+          insetsBottom={insets.bottom}
+          availableStreams={availableStreams}
+          activeStreamLabel={activeStream?.label ?? 'Quality'}
+          selectedQuality={selectedQuality ?? activeStream?.quality ?? null}
+          qualityMenuVisible={qualityMenuVisible}
+          onTogglePlay={() => setPaused((p) => !p)}
+          onPlay={() => setPaused(false)}
+          onRevealControls={revealControls}
+          onPrev={
+            prevVideo
+              ? () => goToVideo(prevVideo.id, prevVideo.contentType)
+              : undefined
+          }
+          onNext={
+            nextVideo
+              ? () => goToVideo(nextVideo.id, nextVideo.contentType)
+              : undefined
+          }
+          onFullscreen={toggleFullscreen}
+          onExitFullscreen={exitImmersiveFullscreen}
+          onSeek={seekTo}
+          onSeekStart={() => {
+            setIsSeeking(true);
+            revealControls();
+            clearHideControlsTimer();
+          }}
+          onSeekEnd={() => setIsSeeking(false)}
+          onToggleQualityMenu={() => setQualityMenuVisible((v) => !v)}
+          onSelectQuality={selectQuality}
+          showVideoShelf={role === 'child' && shelfVideos.length > 0 && immersiveFullscreen}
+          shelfVisible={shelfVisible}
+          shelfVideos={shelfVideos}
+          currentVideoId={video.id}
+          shelfTitle={t('suggested_for_you')}
+          onToggleShelf={toggleShelf}
+          onSelectShelfVideo={(id) => {
+            setShelfVisible(false);
+            const picked =
+              shelfVideos.find((v) => v.id === id) ??
+              suggestedVideos.find((v) => v.id === id) ??
+              (nextVideo?.id === id ? nextVideo : null);
+            goToVideo(id, picked?.contentType);
+          }}
+          hasPosterLoader={showPoster}
+        />
+      </View>
     );
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-        fullscreen && styles.fullscreen,
-        isShort && styles.shortContainer,
-        !fullscreen && { paddingTop: insets.top },
-      ]}
-    >
-      {!streamUri && (
-        <Pressable
-          style={[styles.backBtn, { top: 8 }]}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="chevron-back" size={28} color="#fff" />
-        </Pressable>
-      )}
+    <View style={[styles.screen, useShortLayout && !immersiveFullscreen && styles.screenShort]}>
+      {!immersiveFullscreen ? (
+        <LinearGradient
+          colors={useShortLayout ? ['#000', '#000', '#000'] : ['#F7F4FF', '#FFF9FC', '#F7F4FF']}
+          locations={[0, 0.5, 1]}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+      ) : null}
 
-      {isShort && streamUri && controlsVisible && (
-        <View style={[styles.shortBadge, { top: fullscreen ? insets.top + 12 : 12 }]}>
-          <Icon name="flash" size={12} color="#fff" />
-          <Text style={styles.shortBadgeText}>Short</Text>
+      {!immersiveFullscreen ? (
+        <View style={[styles.header, { paddingTop: insets.top }, useShortLayout && styles.headerShort]}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.headerBack}>
+            <Icon name="chevron-back" size={24} color={useShortLayout ? '#fff' : '#4A3278'} />
+          </Pressable>
         </View>
-      )}
+      ) : null}
 
-      {isShort && !streamUri && (
-        <View style={[styles.shortBadge, { top: 12 }]}>
-          <Icon name="flash" size={12} color="#fff" />
-          <Text style={styles.shortBadgeText}>Short</Text>
-        </View>
-      )}
+      <View
+        style={[
+          immersiveFullscreen ? styles.playerWrapImmersive : styles.playerWrap,
+          !immersiveFullscreen && { height: isShort ? SHORT_HEIGHT + 8 : videoHeight + 8 },
+        ]}
+      >
+        {renderPlayer()}
+      </View>
 
-      {renderPlayer()}
+      {!immersiveFullscreen && role === 'child' && shelfVideos.length > 0 ? (
+        <PlayerVideoShelf
+          variant="inline"
+          title={t('suggested_for_you')}
+          videos={shelfVideos}
+          currentVideoId={video.id}
+          onSelectVideo={(id) => {
+            const picked =
+              shelfVideos.find((v) => v.id === id) ??
+              suggestedVideos.find((v) => v.id === id) ??
+              (nextVideo?.id === id ? nextVideo : null);
+            goToVideo(id, picked?.contentType);
+          }}
+        />
+      ) : null}
 
-      {!fullscreen && (
+      {!immersiveFullscreen ? (
         <ScrollView
-          style={styles.infoScroll}
-          contentContainerStyle={[styles.info, { paddingBottom: insets.bottom + 16 }]}
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title} numberOfLines={2}>
-            {video.title}
-          </Text>
-          {channelNavigable ? (
-            <Pressable style={styles.channelRow} onPress={openChannel}>
-              <Icon name="albums-outline" size={18} color="#c4b5fd" />
-              <Text style={styles.channel}>{video.channelName}</Text>
-              <Icon name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
-            </Pressable>
-          ) : (
-            <View style={styles.channelRow}>
-              <Icon name="albums-outline" size={18} color="#c4b5fd" />
-              <Text style={styles.channel}>{video.channelName}</Text>
-            </View>
-          )}
-          <View style={styles.metaRow}>
-            <View style={styles.metaPill}>
-              <Icon name={isShort ? 'flash' : 'film-outline'} size={14} color="#fff" />
-              <Text style={styles.metaPillText}>{isShort ? 'Short' : 'Video'}</Text>
-            </View>
-            {video.durationSecs ? (
-              <View style={styles.metaPill}>
-                <Icon name="time-outline" size={14} color="#fff" />
-                <Text style={styles.metaPillText}>{formatDuration(video.durationSecs)}</Text>
-              </View>
-            ) : null}
-          </View>
-          {video.description ? (
-            <View style={styles.descriptionBlock}>
-              <Text
-                style={styles.description}
-                numberOfLines={descriptionExpanded ? undefined : DESCRIPTION_PREVIEW_LINES}
-                onTextLayout={(e) => {
-                  if (!descriptionExpanded) {
-                    setDescriptionTruncated(
-                      video.description.length > DESCRIPTION_COLLAPSE_CHARS &&
-                        e.nativeEvent.lines.length >= DESCRIPTION_PREVIEW_LINES,
-                    );
-                  }
-                }}
-              >
-                {video.description}
-              </Text>
-              {(descriptionTruncated || descriptionExpanded) && (
-                <Pressable
-                  onPress={() => setDescriptionExpanded((v) => !v)}
-                  hitSlop={8}
-                  style={styles.seeMoreBtn}
-                >
-                  <Text style={styles.seeMoreText}>
-                    {descriptionExpanded ? t('see_less') : t('see_more')}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          ) : null}
-          {relatedVideos.length > 0 ? (
-            <View style={styles.relatedSection}>
-              <Text style={styles.relatedTitle}>{t('more_like_this')}</Text>
-              <FlatList
-                horizontal
-                data={relatedVideos}
-                keyExtractor={(item) => item.id}
-                showsHorizontalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <VideoCard
-                    video={item}
-                    horizontal
-                    onPress={() => navigation.replace('VideoPlayer', { videoId: item.id })}
-                    onFavorite={() => toggleFavorite(item.id)}
-                  />
-                )}
-              />
-            </View>
-          ) : null}
-          {!streamUri && watchUrl ? (
-            <Pressable onPress={openExternal} style={styles.youtubeLink}>
-              <Icon name="open-outline" size={20} color="#fff" />
-              <Text style={styles.youtubeLinkText}>Open in YouTube</Text>
-            </Pressable>
-          ) : null}
+          <VideoDetailPanel
+            title={video.title}
+            channelName={video.channelName}
+            channelThumbnailUrl={video.channelThumbnailUrl}
+            channelNavigable={channelNavigable}
+            showActions={role === 'child'}
+            isFavorite={isVideoFavorite(video.id)}
+            isChannelFavorite={video.channelId ? isChannelFavorite(video.channelId) : false}
+            hasChannel={Boolean(video.channelId)}
+            nextVideo={nextVideo}
+            showUpNext={Boolean(nextVideo && autoplayEnabled)}
+            suggestedVideos={role === 'child' && shelfVideos.length > 0 ? [] : suggestedVideos}
+            labels={{
+              favorites: t('favorites'),
+              channels: t('favorite_channels'),
+              visitChannel: t('visit_channel'),
+              upNext: t('up_next'),
+              suggested: t('suggested_for_you'),
+            }}
+            onOpenChannel={openChannel}
+            onToggleFavorite={() => void toggleVideo(video.id)}
+            onToggleChannel={() => video.channelId && void toggleChannel(video.channelId)}
+            onUpNext={() => nextVideo && goToVideo(nextVideo.id, nextVideo.contentType)}
+            onVideo={(id) => {
+              const picked =
+                suggestedVideos.find((v) => v.id === id) ?? (nextVideo?.id === id ? nextVideo : null);
+              goToVideo(id, picked?.contentType);
+            }}
+            onFavoriteVideo={(id) =>
+              role === 'child' ? void toggleVideo(id) : toggleFavorite(id)
+            }
+          />
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  shortContainer: { backgroundColor: '#0a0a0a' },
-  fullscreen: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
-  fallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', padding: 24 },
-  fallbackText: { color: '#fff', textAlign: 'center', marginBottom: 16 },
-  backLink: { padding: 12 },
-  backLinkText: { color: '#a78bfa', fontWeight: '600' },
-  backBtn: {
-    position: 'absolute',
-    left: 12,
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  screen: { flex: 1 },
+  screenShort: { backgroundColor: '#000' },
+  loading: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 12,
   },
-  shortBadge: {
-    position: 'absolute',
-    alignSelf: 'center',
-    zIndex: 10,
-    flexDirection: 'row',
+  errText: { color: '#4A3278', textAlign: 'center', paddingHorizontal: 24 },
+  backLink: { color: BRAND_PRIMARY, fontWeight: '700', fontSize: 15 },
+  header: {
+    paddingHorizontal: 14,
+    paddingBottom: 2,
+  },
+  headerBack: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(236, 72, 153, 0.9)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.full,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.75)',
   },
-  shortBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  videoWrap: {
-    width: '100%',
+  playerWrap: {
+    justifyContent: 'center',
+    marginHorizontal: 12,
+    marginBottom: 4,
+  },
+  playerWrapImmersive: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 200,
     backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    marginHorizontal: 0,
+    marginBottom: 0,
   },
-  videoWrapFullscreen: {
+  playerFrame: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  shortVideoWrap: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    backgroundColor: '#0a0a0a',
-  },
-  video: { width: '100%', height: '100%' },
-  shortVideo: {
-    width: SHORT_WIDTH,
-    height: SHORT_HEIGHT,
-    borderRadius: radius.lg,
+    height: '100%',
     overflow: 'hidden',
+    backgroundColor: '#0F0A1F',
+    shadowColor: '#7B4DFF',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
-  videoFullscreen: { width: '100%', height: '100%' },
-  bufferingOverlay: {
+  playerFrameImmersive: {
+    borderRadius: playerTheme.radiusImmersive,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  video: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+  },
+  videoUntilReady: {
+    opacity: 0,
+  },
+  videoShortParent: {
+    width: Math.min(width * 0.72, 320),
+    height: Math.min(width * 0.72, 320) * (16 / 9),
+    alignSelf: 'center',
+  },
+  headerShort: { backgroundColor: 'transparent' },
+  ytOverlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 3,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  videoTapLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-  controlsChrome: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 5,
-  },
-  topControlsGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 56,
-    justifyContent: 'flex-start',
-    paddingTop: 6,
-    paddingLeft: 8,
-  },
-  videoBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playPauseCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.85)',
-  },
-  controlsGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: CONTROLS_HEIGHT + 12,
-    zIndex: 4,
-    justifyContent: 'flex-end',
-  },
-  controlBar: {
-    height: CONTROLS_HEIGHT,
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    paddingTop: 4,
-    justifyContent: 'flex-end',
-    gap: 4,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 36,
-  },
-  controlPlayBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressTrackHit: {
-    width: '100%',
-    height: 28,
-    justifyContent: 'center',
-  },
-  progressTrack: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    overflow: 'hidden',
-  },
-  progressBuffer: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#ff0000',
-    borderRadius: 2,
-  },
-  progressThumb: {
-    position: 'absolute',
-    width: THUMB_SIZE,
-    height: THUMB_SIZE,
-    top: 8,
-    borderRadius: THUMB_SIZE / 2,
-    backgroundColor: '#ff0000',
-  },
-  timeText: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  fullscreenBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  externalPlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  externalPlayCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255,0,0,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  externalPlayText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  infoScroll: { flex: 1, backgroundColor: '#0a0a0a' },
-  info: { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: 8 },
-  title: { ...typography.bodyBold, color: '#fff', lineHeight: 22 },
-  channelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  channel: { ...typography.body, color: '#c4b5fd', flex: 1, fontWeight: '600' },
-  metaRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  metaPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-  },
-  metaPillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  descriptionBlock: { gap: 4 },
-  description: {
-    ...typography.caption,
-    color: 'rgba(255,255,255,0.72)',
-    lineHeight: 18,
-  },
-  seeMoreBtn: { alignSelf: 'flex-start' },
-  seeMoreText: {
-    ...typography.caption,
-    color: '#a78bfa',
-    fontWeight: '700',
-  },
-  relatedSection: {
-    marginTop: spacing.sm,
-    gap: spacing.sm,
-  },
-  relatedTitle: {
-    ...typography.bodyBold,
-    color: '#fff',
-  },
-  youtubeLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: spacing.sm,
-    paddingVertical: 10,
-  },
-  youtubeLinkText: { color: '#fff', ...typography.caption, fontWeight: '600' },
+  scroll: { flex: 1 },
 });

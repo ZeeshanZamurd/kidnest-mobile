@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Pressable,
@@ -26,9 +25,10 @@ import {
   type AssignedChannel,
   type AssignedVideo,
 } from '../../api/assignments';
-import { fetchParentChildren, type ParentChild } from '../../api/parent';
 import { formatDuration } from '../../api/browse';
+import type { ParentChild } from '../../api/parent';
 import { useAppStore } from '../../store/useAppStore';
+import { KidAlert } from '../../services/kidAlert';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -37,28 +37,16 @@ export default function ParentLibraryScreen() {
   const navigation = useNavigation<Nav>();
   const activeChildId = useAppStore((s) => s.activeChildId);
   const setActiveChild = useAppStore((s) => s.setActiveChild);
-  const setApiChildren = useAppStore((s) => s.setApiChildren);
+  const apiChildren = useAppStore((s) => s.apiChildren);
 
-  const [children, setChildren] = useState<ParentChild[]>([]);
   const [videos, setVideos] = useState<AssignedVideo[]>([]);
   const [channels, setChannels] = useState<AssignedChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'videos' | 'channels'>('videos');
 
-  const childId = activeChildId ?? children[0]?.id ?? null;
+  const childId = activeChildId ?? apiChildren[0]?.id ?? null;
   const { headerTop } = useAppInsets();
   const listBottomPad = useStackScreenPadding();
-
-  const loadChildren = useCallback(async () => {
-    try {
-      const list = await fetchParentChildren();
-      setChildren(list);
-      setApiChildren(list);
-      if (!activeChildId && list[0]) setActiveChild(list[0].id);
-    } catch {
-      /* keep mock children */
-    }
-  }, [activeChildId, setActiveChild, setApiChildren]);
 
   const loadLibrary = useCallback(async () => {
     if (!childId) return;
@@ -76,8 +64,10 @@ export default function ParentLibraryScreen() {
   }, [childId]);
 
   useEffect(() => {
-    void loadChildren();
-  }, [loadChildren]);
+    if (!activeChildId && apiChildren[0]) {
+      setActiveChild(apiChildren[0].id);
+    }
+  }, [activeChildId, apiChildren, setActiveChild]);
 
   useEffect(() => {
     void loadLibrary();
@@ -85,7 +75,7 @@ export default function ParentLibraryScreen() {
 
   const confirmRemoveVideo = (video: AssignedVideo) => {
     if (!childId) return;
-    Alert.alert('Remove video?', video.video.title, [
+    KidAlert.alert('Remove video?', video.video.title, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -97,7 +87,7 @@ export default function ParentLibraryScreen() {
 
   const confirmRemoveChannel = (channel: AssignedChannel) => {
     if (!childId) return;
-    Alert.alert('Remove channel?', channel.channel.title, [
+    KidAlert.alert('Remove channel?', channel.channel.title, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -120,7 +110,7 @@ export default function ParentLibraryScreen() {
       </View>
 
       <ScrollChildPicker
-        children={children}
+        children={apiChildren}
         activeId={childId}
         onSelect={setActiveChild}
         colors={colors}
@@ -144,7 +134,7 @@ export default function ParentLibraryScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
       ) : tab === 'videos' ? (
         videos.length === 0 ? (
-          <EmptyState icon="film" title="No videos yet" description="Browse and add videos for this child." />
+          <EmptyState branded icon="film" title="No videos yet" description="Browse and add videos for this child." />
         ) : (
           <FlatList
             data={videos}
@@ -169,7 +159,7 @@ export default function ParentLibraryScreen() {
           />
         )
       ) : channels.length === 0 ? (
-        <EmptyState icon="tv" title="No channels yet" description="Browse and add full channels for this child." />
+        <EmptyState branded icon="tv" title="No channels yet" description="Browse and add full channels for this child." />
       ) : (
         <FlatList
           data={channels}

@@ -66,7 +66,10 @@ export default function ChildProfilesScreen() {
             <ChildProfileCard
               child={item}
               selected={item.id === activeChildId}
-              onPress={() => setActiveChild(item.id)}
+              onPress={() => {
+                setActiveChild(item.id);
+                navigation.navigate('ChildProfileDetail', { childId: item.id });
+              }}
               onTogglePause={() => void handleTogglePause(item.id)}
             />
           )}

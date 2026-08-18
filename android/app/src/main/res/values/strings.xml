@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">KidNest</string>
+    <string name="app_block_accessibility_label">KidNest App Blocking</string>
+    <string name="app_block_accessibility_desc">KidNest uses accessibility to block apps that parents restrict during child mode.</string>
+    <string name="blocked_title">App blocked</string>
+    <string name="blocked_message_default">This app is not allowed in child mode. Your parent chose approved KidNest videos instead.</string>
+    <string name="blocked_hint">Ask a parent if you need help.</string>
+    <string name="blocked_back_to_kidnest">Back to KidNest</string>
+    <string name="blocked_icon_desc">Blocked app shield</string>
+    <string name="blocked_app_format">%1$s is blocked</string>
 </resources>

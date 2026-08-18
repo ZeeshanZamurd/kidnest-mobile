@@ -1,49 +1,85 @@
-import React from 'react';
-import { FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback } from 'react';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import GradientBackground from '../../components/ui/GradientBackground';
-import EmptyState from '../../components/ui/EmptyState';
+import WatchHistoryList from '../../components/history/WatchHistoryList';
 import { useTheme } from '../../context/ThemeContext';
-import { useWatchHistory } from '../../store/useAppStore';
+import { useAppStore } from '../../store/useAppStore';
+import { useChildWatchHistory } from '../../hooks/useChildWatchHistory';
 import { useAppInsets } from '../../hooks/useAppInsets';
 import { useStackScreenPadding } from '../../hooks/useScreenPadding';
-import { radius, spacing, typography } from '../../theme/colors';
+import { spacing, typography, radius } from '../../theme/colors';
+import type { RootStackParamList } from '../../navigation/types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function WatchHistoryScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const history = useWatchHistory();
+  const navigation = useNavigation<Nav>();
+  const apiChildren = useAppStore((s) => s.apiChildren);
+  const activeChildId = useAppStore((s) => s.activeChildId);
+  const setActiveChild = useAppStore((s) => s.setActiveChild);
   const { headerTop } = useAppInsets();
   const listBottomPad = useStackScreenPadding();
 
-  if (history.length === 0) {
-    return (
-      <GradientBackground>
-        <EmptyState icon="time" title={t('no_history')} description={t('no_history_desc')} />
-      </GradientBackground>
-    );
-  }
+  const childId = activeChildId ?? apiChildren[0]?.id ?? null;
+  const { history, loading, reload } = useChildWatchHistory(childId);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
+
+  const openVideo = (videoId: string) => {
+    navigation.navigate('VideoPlayer', { videoId });
+  };
 
   return (
     <GradientBackground variant="subtle">
-      <Text style={[styles.title, { color: colors.text, paddingTop: headerTop }]}>{t('history')}</Text>
-      <FlatList
-        data={history}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.list, { paddingBottom: listBottomPad }]}
-        renderItem={({ item }) => (
-          <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Image source={{ uri: item.thumbnail }} style={styles.thumb} />
-            <View style={styles.meta}>
-              <Text style={[styles.videoTitle, { color: colors.text }]} numberOfLines={2}>
-                {item.videoTitle}
+      <Text style={[styles.title, { color: colors.text, paddingTop: headerTop }]}>
+        {t('history')}
+      </Text>
+
+      {apiChildren.length > 1 ? (
+        <FlatList
+          horizontal
+          data={apiChildren}
+          keyExtractor={(c) => c.id}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.childPicker}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => setActiveChild(item.id)}
+              style={[
+                styles.childChip,
+                {
+                  backgroundColor: childId === item.id ? colors.primary : colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: childId === item.id ? '#fff' : colors.text,
+                  fontWeight: '600',
+                }}
+              >
+                {item.user.displayName}
               </Text>
-              <Text style={[styles.time, { color: colors.textMuted }]}>
-                {item.durationMinutes} {t('minutes')} · {new Date(item.watchedAt).toLocaleDateString()}
-              </Text>
-            </View>
-          </View>
-        )}
+            </Pressable>
+          )}
+        />
+      ) : null}
+
+      <WatchHistoryList
+        history={history}
+        loading={loading}
+        onVideoPress={openVideo}
+        listBottomPad={listBottomPad}
       />
     </GradientBackground>
   );
@@ -51,16 +87,16 @@ export default function WatchHistoryScreen() {
 
 const styles = StyleSheet.create({
   title: { ...typography.h1, paddingHorizontal: spacing.lg, marginBottom: spacing.md },
-  list: { paddingHorizontal: spacing.md },
-  row: {
-    flexDirection: 'row',
+  childPicker: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  childChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
     borderRadius: radius.lg,
     borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: spacing.sm,
+    marginRight: spacing.sm,
   },
-  thumb: { width: 120, height: 68 },
-  meta: { flex: 1, padding: spacing.md, justifyContent: 'center' },
-  videoTitle: { ...typography.bodyBold, marginBottom: 4 },
-  time: { ...typography.caption },
 });

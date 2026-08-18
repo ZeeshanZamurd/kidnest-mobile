@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { BRAND_ACCENT, BRAND_CYAN, BRAND_PRIMARY } from '../../constants/branding';
 import { useTheme } from '../../context/ThemeContext';
 
 type Props = {
@@ -14,7 +15,7 @@ export default function GradientBackground({ children, style, variant = 'default
 
   const gradientColors =
     variant === 'child'
-      ? ['#FF6B9D', '#C084FC', '#60A5FA']
+      ? [BRAND_ACCENT, BRAND_PRIMARY, BRAND_CYAN]
       : variant === 'subtle'
         ? [colors.background, colors.backgroundSecondary, colors.background]
         : [colors.gradientStart, colors.gradientMid, colors.gradientEnd];

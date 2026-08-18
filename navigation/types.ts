@@ -1,16 +1,19 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   Auth: undefined;
   ProfileSelection: undefined;
-  ParentTabs: undefined;
-  ChildTabs: undefined;
+  ParentTabs: NavigatorScreenParams<ParentTabParamList> | undefined;
+  ChildTabs: NavigatorScreenParams<ChildTabParamList> | undefined;
   VideoPlayer: { videoId: string };
   ChannelDetail: { channelId: string };
   ChildChannelDetail: { channelId: string };
   AddVideo: undefined;
   AddChild: undefined;
   ChildProfiles: undefined;
+  ChildProfileDetail: { childId: string };
   WatchHistory: undefined;
   Favorites: undefined;
   Analytics: undefined;
@@ -18,6 +21,7 @@ export type RootStackParamList = {
   Search: undefined;
   ParentLibrary: undefined;
   Subscription: undefined;
+  AppBlocking: undefined;
 };
 
 export type ParentTabParamList = {
@@ -29,7 +33,7 @@ export type ParentTabParamList = {
 
 export type ChildTabParamList = {
   ChildHome: undefined;
-  ChildFeed: undefined;
+  ChildFeed: { videoId?: string; channelId?: string } | undefined;
   ChildHistory: undefined;
   ChildFavorites: undefined;
 };

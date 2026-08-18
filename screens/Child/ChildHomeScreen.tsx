@@ -1,30 +1,52 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import GradientBackground from '../../components/ui/GradientBackground';
 import SectionHeader from '../../components/ui/SectionHeader';
 import VideoCard from '../../components/video/VideoCard';
 import ChildChannelCard from '../../components/discover/ChildChannelCard';
 import ProfileAvatar from '../../components/profile/ProfileAvatar';
+import { ChildHomeSkeleton } from '../../components/child/ChildScreenSkeletons';
+import { ChildLoadError } from '../../components/child/ChildLoadFeedback';
 import { useTheme } from '../../context/ThemeContext';
 import { useAppStore } from '../../store/useAppStore';
 import { useChildLibrary } from '../../hooks/useChildLibrary';
+import { useChildFavorites } from '../../hooks/useChildFavorites';
 import { useChildWatchHistory } from '../../hooks/useChildWatchHistory';
+import { useVideosWithProgress } from '../../hooks/useVideosWithProgress';
 import { useTabScreenPadding } from '../../hooks/useScreenPadding';
 import { useAppInsets } from '../../hooks/useAppInsets';
 import { formatDuration } from '../../api/browse';
 import { normalizeCategory } from '../../utils/videoMapper';
 import { spacing, typography } from '../../theme/colors';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootStackParamList, ChildTabParamList } from '../../navigation/types';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { Video } from '../../types';
 import type { WatchHistoryItem } from '../../api/watch';
 import type { AvatarKey } from '../../constants/avatars';
 import { getChildProfileMeta } from '../../services/childProfileMetaStorage';
+import { getHomeSuggestedVideos } from '../../utils/videoSuggestions';
+import { LIST_PERFORMANCE } from '../../services/cache/flatListConfig';
+import { prefetchFeedThumbnails, prefetchChannelThumbnails } from '../../services/cache/prefetch';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Nav = CompositeNavigationProp<
+  BottomTabNavigationProp<ChildTabParamList, 'ChildHome'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 function watchItemToVideo(item: WatchHistoryItem): Video {
   return {
@@ -51,13 +73,32 @@ export default function ChildHomeScreen() {
   const activeChildId = useAppStore((s) => s.activeChildId);
   const apiChildren = useAppStore((s) => s.apiChildren);
   const exitProfileMode = useAppStore((s) => s.exitProfileMode);
-  const toggleFavorite = useAppStore((s) => s.toggleVideoFavorite);
-  const { channels, feedVideos, hasContent, loading } = useChildLibrary(activeChildId);
+  const { channels, feedVideos, hasContent, loading, error, isChannelFavorite, reload: reloadLibrary } =
+    useChildLibrary(activeChildId);
+  const { toggleVideo, toggleChannel } = useChildFavorites(activeChildId);
   const { continueWatching, reload: reloadWatch } = useChildWatchHistory(activeChildId);
   const { headerTop } = useAppInsets();
   const scrollBottomPad = useTabScreenPadding();
 
   const [avatarKey, setAvatarKey] = useState<AvatarKey>('lion');
+  const [inlinePlayingId, setInlinePlayingId] = useState<string | null>(null);
+  const lastScrollY = useRef(0);
+
+  const stopInlinePlay = useCallback(() => {
+    setInlinePlayingId(null);
+  }, []);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!inlinePlayingId) return;
+      const y = e.nativeEvent.contentOffset.y;
+      if (Math.abs(y - lastScrollY.current) > 10) {
+        stopInlinePlay();
+      }
+      lastScrollY.current = y;
+    },
+    [inlinePlayingId, stopInlinePlay],
+  );
 
   const childName = useMemo(() => {
     const apiChild = apiChildren.find((c) => c.id === activeChildId);
@@ -72,10 +113,68 @@ export default function ChildHomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       void reloadWatch();
-    }, [reloadWatch]),
+      void reloadLibrary(true);
+      return () => setInlinePlayingId(null);
+    }, [reloadWatch, reloadLibrary]),
   );
 
-  const continueVideos = useMemo(() => continueWatching.map(watchItemToVideo), [continueWatching]);
+  useEffect(() => {
+    if (feedVideos.length === 0) return;
+    prefetchFeedThumbnails(feedVideos, 0, 12);
+    prefetchChannelThumbnails(channels);
+  }, [feedVideos, channels]);
+
+  const continueVideos = useMemo(
+    () =>
+      continueWatching
+        .map(watchItemToVideo)
+        .filter((v) => {
+          const feedItem = feedVideos.find((f) => f.id === v.id);
+          return feedItem?.contentType !== 'SHORT';
+        }),
+    [continueWatching, feedVideos],
+  );
+
+  const longFormFeed = useMemo(
+    () => feedVideos.filter((v) => v.contentType !== 'SHORT'),
+    [feedVideos],
+  );
+
+  const suggestedVideos = useMemo(
+    () =>
+      getHomeSuggestedVideos(
+        longFormFeed,
+        continueVideos.map((v) => v.id),
+        10,
+      ),
+    [longFormFeed, continueVideos],
+  );
+
+  const continueWithProgress = useVideosWithProgress(activeChildId, continueVideos);
+  const suggestedWithProgress = useVideosWithProgress(activeChildId, suggestedVideos);
+  const feedWithProgress = useVideosWithProgress(activeChildId, longFormFeed);
+
+  const openVideo = (videoId: string) => {
+    const meta = feedVideos.find((v) => v.id === videoId);
+    if (meta?.contentType === 'SHORT') {
+      navigation.navigate('ChildFeed', { videoId, channelId: meta.channelId });
+      return;
+    }
+    navigation.navigate('VideoPlayer', { videoId });
+  };
+
+  const cardProps = (video: Video) => ({
+    video,
+    inlinePlay: true,
+    isPlayingInline: inlinePlayingId === video.id,
+    onStartInline: () => setInlinePlayingId(video.id),
+    onStopInline: () => setInlinePlayingId((id) => (id === video.id ? null : id)),
+    onPress: () => {
+      setInlinePlayingId(null);
+      openVideo(video.id);
+    },
+    onFavorite: () => void toggleVideo(video.id),
+  });
 
   const switchProfile = () => {
     exitProfileMode();
@@ -86,15 +185,14 @@ export default function ChildHomeScreen() {
     navigation.navigate('ChildChannelDetail', { channelId });
   };
 
-  const openVideo = (videoId: string) => {
-    navigation.navigate('VideoPlayer', { videoId });
-  };
-
   return (
     <GradientBackground variant="child">
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottomPad }]}
+        onScrollBeginDrag={stopInlinePlay}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         <View style={[styles.header, { paddingTop: headerTop }]}>
           <View style={styles.headerLeft}>
@@ -111,30 +209,54 @@ export default function ChildHomeScreen() {
           </Pressable>
         </View>
 
-        {loading ? null : !hasContent ? (
+        {loading ? (
+          <ChildHomeSkeleton />
+        ) : error && !hasContent ? (
+          <ChildLoadError
+            title={t('child_load_error')}
+            description={t('child_load_error_desc')}
+            retryLabel={t('try_again')}
+            onRetry={() => void reloadLibrary()}
+          />
+        ) : !hasContent ? (
           <View style={styles.empty}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('no_assigned_videos')}</Text>
             <Text style={[styles.emptyDesc, { color: colors.textMuted }]}>{t('no_assigned_videos_desc')}</Text>
           </View>
         ) : (
-          <>
-            {continueVideos.length > 0 && (
+          <Animated.View entering={FadeIn.duration(280)}>
+            {continueWithProgress.length > 0 && (
               <>
                 <SectionHeader title={t('continue_watching')} />
                 <FlatList
                   horizontal
-                  data={continueVideos}
+                  data={continueWithProgress}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
-                    <VideoCard
-                      video={item}
-                      horizontal
-                      onPress={() => openVideo(item.id)}
-                      onFavorite={() => toggleFavorite(item.id)}
-                    />
+                    <VideoCard {...cardProps(item)} horizontal />
                   )}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ paddingHorizontal: spacing.md }}
+                  {...LIST_PERFORMANCE}
+                  initialNumToRender={4}
+                />
+              </>
+            )}
+
+            {suggestedWithProgress.length > 0 && (
+              <>
+                <SectionHeader title={t('suggested_for_you')} />
+                <FlatList
+                  horizontal
+                  data={suggestedWithProgress}
+                  keyExtractor={(item) => `suggested-${item.id}`}
+                  renderItem={({ item }) => (
+                    <VideoCard {...cardProps(item)} horizontal />
+                  )}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
+                  {...LIST_PERFORMANCE}
+                  initialNumToRender={4}
                 />
               </>
             )}
@@ -151,29 +273,29 @@ export default function ChildHomeScreen() {
                       channel={item}
                       compact
                       onPress={() => openChannel(item.id)}
+                      onFavorite={() => void toggleChannel(item.id)}
+                      isFavorite={isChannelFavorite(item.id)}
                     />
                   )}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
+                  {...LIST_PERFORMANCE}
+                  initialNumToRender={6}
                 />
               </>
             )}
 
-            {feedVideos.length > 0 && (
+            {feedWithProgress.length > 0 && (
               <>
                 <SectionHeader title={t('for_you')} />
-                {feedVideos.map((video) => (
+                {feedWithProgress.map((video) => (
                   <View key={video.id} style={{ paddingHorizontal: spacing.md }}>
-                    <VideoCard
-                      video={video}
-                      onPress={() => openVideo(video.id)}
-                      onFavorite={() => toggleFavorite(video.id)}
-                    />
+                    <VideoCard {...cardProps(video)} />
                   </View>
                 ))}
               </>
             )}
-          </>
+          </Animated.View>
         )}
       </ScrollView>
     </GradientBackground>

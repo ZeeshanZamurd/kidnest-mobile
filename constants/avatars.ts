@@ -22,8 +22,8 @@ export const AVATARS: Record<AvatarKey, AvatarConfig> = {
   panda: { emoji: '🐼', gradient: ['#9CA3AF', '#4B5563'], label: 'Panda' },
   fox: { emoji: '🦊', gradient: ['#FB923C', '#EA580C'], label: 'Fox' },
   bear: { emoji: '🐻', gradient: ['#D97706', '#92400E'], label: 'Bear' },
-  rabbit: { emoji: '🐰', gradient: ['#F472B6', '#EC4899'], label: 'Rabbit' },
-  owl: { emoji: '🦉', gradient: ['#A78BFA', '#7C3AED'], label: 'Owl' },
+  rabbit: { emoji: '🐰', gradient: ['#FF72C8', '#FF4DB8'], label: 'Rabbit' },
+  owl: { emoji: '🦉', gradient: ['#A88FFF', '#7B4DFF'], label: 'Owl' },
   koala: { emoji: '🐨', gradient: ['#94A3B8', '#64748B'], label: 'Koala' },
   tiger: { emoji: '🐯', gradient: ['#FBBF24', '#F97316'], label: 'Tiger' },
 };

@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  View,
   ViewStyle,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -15,12 +16,13 @@ import Animated, {
 import { useTheme } from '../../context/ThemeContext';
 import { radius, typography } from '../../theme/colors';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.View;
 
 type Props = {
   label: string;
   onPress: () => void;
   loading?: boolean;
+  loadingLabel?: string;
   variant?: 'primary' | 'outline' | 'ghost';
   style?: ViewStyle;
   disabled?: boolean;
@@ -30,6 +32,7 @@ export default function PrimaryButton({
   label,
   onPress,
   loading,
+  loadingLabel,
   variant = 'primary',
   style,
   disabled,
@@ -51,75 +54,89 @@ export default function PrimaryButton({
 
   if (variant === 'outline') {
     return (
-      <AnimatedPressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled || loading}
-        style={[
-          animatedStyle,
-          styles.outline,
-          { borderColor: colors.primary },
-          style,
-        ]}
-      >
-        {loading ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : (
-          <Text style={[styles.label, { color: colors.primary }]}>{label}</Text>
-        )}
-      </AnimatedPressable>
+      <AnimatedView style={[animatedStyle, style]}>
+        <Pressable
+          onPress={onPress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          disabled={disabled || loading}
+          style={[styles.outline, { borderColor: colors.primary }]}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <Text style={[styles.label, { color: colors.primary }]}>{label}</Text>
+          )}
+        </Pressable>
+      </AnimatedView>
     );
   }
 
   if (variant === 'ghost') {
     return (
-      <AnimatedPressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled || loading}
-        style={[animatedStyle, styles.ghost, style]}
-      >
-        <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-      </AnimatedPressable>
+      <AnimatedView style={[animatedStyle, style]}>
+        <Pressable
+          onPress={onPress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          disabled={disabled || loading}
+          style={styles.ghost}
+        >
+          <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
+        </Pressable>
+      </AnimatedView>
     );
   }
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={disabled || loading}
-      style={[animatedStyle, styles.button, style]}
-    >
-      <LinearGradient
-        colors={[colors.gradientStart, colors.gradientMid]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.gradient}
+    <AnimatedView style={[animatedStyle, styles.wrapper, style]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled || loading}
+        style={styles.button}
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.labelWhite}>{label}</Text>
-        )}
-      </LinearGradient>
-    </AnimatedPressable>
+        <LinearGradient
+          colors={[colors.gradientStart, colors.gradientMid]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.content}>
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.labelWhite}>{loadingLabel ?? label}</Text>
+            </View>
+          ) : (
+            <Text style={styles.labelWhite}>{label}</Text>
+          )}
+        </View>
+      </Pressable>
+    </AnimatedView>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    alignSelf: 'stretch',
+  },
   button: {
     borderRadius: radius.lg,
     overflow: 'hidden',
   },
-  gradient: {
+  content: {
+    minHeight: 52,
     paddingVertical: 16,
     paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   outline: {
     paddingVertical: 14,
