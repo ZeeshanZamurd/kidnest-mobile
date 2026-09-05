@@ -20,6 +20,8 @@ export type PlatformAccess = {
   freeChannelVideoLimit?: number | null;
   /** When true, free users are not capped on Discover browse. */
   freeUnlimitedBrowse?: boolean;
+  /** When true, free users may assign any number of free channels. */
+  freeUnlimitedChannels?: boolean;
   subscription: {
     status: string;
     planName: string;
@@ -112,9 +114,9 @@ export async function toggleChildPauseApi(childId: string) {
 export async function fetchPlatformAccess() {
   return apiRequest<PlatformAccess>('/users/me/access', 'GET', {
     cache: {
-      ttlMs: 5 * 60 * 1000,
+      ttlMs: 30 * 1000,
       staleWhileRevalidate: true,
-      persist: true,
+      persist: false,
     },
     cacheKey: 'platform:access',
   });

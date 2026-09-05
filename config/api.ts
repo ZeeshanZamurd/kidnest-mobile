@@ -4,10 +4,10 @@
  * Production: set API_URL or API_DOMAIN below.
  * Development: leave both empty — the app uses Metro's connected host IP automatically.
  */
-export const API_URL = 'https://api.kido-nest.fun/api';
+export const API_URL = '';
 
 /** Host only, e.g. api.kido-nest.fun — used when API_URL is empty. */
-export const API_DOMAIN = 'api.kido-nest.fun';
+export const API_DOMAIN = '';
 
 /** Use https when API_DOMAIN is set (set false for local domain testing). */
 export const API_DOMAIN_USE_HTTPS = true;

@@ -34,7 +34,14 @@ export function useAssignToChild() {
 
   const hasFullVideoAccess =
     platformAccess?.hasFullVideoAccess ?? false;
-  const canAssignChannels = platformAccess?.canAssignChannels ?? hasFullVideoAccess;
+  const freeUnlimitedChannels = platformAccess?.freeUnlimitedChannels ?? false;
+  const freeMaxChannels = platformAccess?.freeMaxChannels;
+  /** Prefer explicit flags; also honor free-tier channel quota from admin settings. */
+  const canAssignChannels =
+    hasFullVideoAccess ||
+    freeUnlimitedChannels ||
+    platformAccess?.canAssignChannels === true ||
+    (typeof freeMaxChannels === 'number' && freeMaxChannels > 0);
   const freeMaxAssignments = platformAccess?.freeMaxAssignments ?? 10;
 
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -314,23 +321,12 @@ export function useAssignToChild() {
 
   const requestToggleChannel = useCallback(
     (channel: BrowseChannel) => {
+      // Premium vs free is marked on the channel in DB; limits come from app_settings via API.
       const premiumLocked = Boolean(channel.isPremium) && !hasFullVideoAccess;
       if (premiumLocked) {
         KidAlert.alert(
           'Premium channel',
           'Subscribe to add this channel for your child.',
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
-          ],
-        );
-        return;
-      }
-
-      if (!canAssignChannels && !assignedChannelIds.has(channel.id)) {
-        KidAlert.alert(
-          'Channel limit',
-          'Subscribe to add more channels for your family.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
@@ -362,7 +358,6 @@ export function useAssignToChild() {
     [
       assignedChannelIds,
       assignToActiveChild,
-      canAssignChannels,
       hasFullVideoAccess,
       navigation,
       performRemoveChannel,
