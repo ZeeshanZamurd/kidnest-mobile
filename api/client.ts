@@ -23,6 +23,9 @@ export type ApiRequestOptions = {
 let authToken: string | null = null;
 const inflightGet = new Map<string, Promise<unknown>>();
 
+/** Avoid infinite spinners when the phone cannot reach the API host. */
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+
 export function getInflightRequestCount(): number {
   return inflightGet.size;
 }
@@ -40,7 +43,15 @@ function toApiError(raw: unknown, fallbackMessage: string): ApiRequestError {
   if (raw && typeof raw === 'object') {
     const maybe = raw as { status?: number; message?: string };
     if (typeof maybe.status === 'number') err.status = maybe.status;
-    if (typeof maybe.message === 'string') err.message = maybe.message;
+    // Prefer our detailed message; only keep server message when it adds status context
+    if (
+      typeof maybe.message === 'string' &&
+      maybe.message.trim() &&
+      maybe.message !== 'Network request failed' &&
+      !fallbackMessage.startsWith('Network request failed')
+    ) {
+      err.message = maybe.message;
+    }
   }
   err.isNetworkError = !err.status;
   return err;
@@ -137,11 +148,25 @@ async function executeRequest<T>(
 
   let response: Response;
   const requestUrl = url.toString();
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(
+    () => timeoutController.abort(),
+    DEFAULT_REQUEST_TIMEOUT_MS,
+  );
+  const onCallerAbort = () => timeoutController.abort();
+  if (options?.signal) {
+    if (options.signal.aborted) {
+      timeoutController.abort();
+    } else {
+      options.signal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+  }
+
   try {
     response = await fetch(requestUrl, {
       method,
       headers,
-      signal: options?.signal,
+      signal: timeoutController.signal,
       body: options?.body
         ? isFormData
           ? (options.body as FormData)
@@ -149,12 +174,30 @@ async function executeRequest<T>(
         : undefined,
     });
   } catch (error) {
-    const detail =
-      error instanceof Error ? error.message : 'unknown error';
+    const aborted =
+      (error instanceof Error && error.name === 'AbortError') ||
+      timeoutController.signal.aborted;
+    const detail = aborted
+      ? `Timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    if (__DEV__) {
+      console.error('[API] NETWORK FAIL', {
+        method,
+        url: requestUrl,
+        baseUrl,
+        detail,
+        error,
+      });
+    }
     throw toApiError(
       error,
-      `Network request failed (${requestUrl}). Check the API is running and your phone can reach this address. ${detail}`,
+      `Network request failed\nURL: ${requestUrl}\nCause: ${detail}\nTip: run \`adb reverse tcp:3010 tcp:3010\` and keep Nest on :3010.`,
     );
+  } finally {
+    clearTimeout(timeoutId);
+    options?.signal?.removeEventListener('abort', onCallerAbort);
   }
 
   const text = await response.text();
@@ -182,7 +225,21 @@ async function executeRequest<T>(
         'message' in payload &&
         typeof (payload as { message: unknown }).message === 'string' &&
         (payload as { message: string }).message) ||
+      (payload &&
+        typeof payload === 'object' &&
+        'message' in payload &&
+        Array.isArray((payload as { message: unknown }).message) &&
+        (payload as { message: string[] }).message.join(', ')) ||
       `Request failed (${response.status})`;
+    if (__DEV__) {
+      console.error('[API] HTTP ERROR', {
+        method,
+        url: requestUrl,
+        status: response.status,
+        message,
+        payload,
+      });
+    }
     const err = toApiError({ status: response.status, message }, message);
     throw err;
   }

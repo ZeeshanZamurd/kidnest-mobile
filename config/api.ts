@@ -7,7 +7,7 @@
 export const API_URL = 'https://api.kido-nest.fun/api';
 
 /** Host only, e.g. api.kido-nest.fun — used when API_URL is empty. */
-export const API_DOMAIN = '';
+export const API_DOMAIN = 'api.kido-nest.fun';
 
 /** Use https when API_DOMAIN is set (set false for local domain testing). */
 export const API_DOMAIN_USE_HTTPS = true;

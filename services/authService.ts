@@ -8,7 +8,7 @@ import {
 import { detectGeoLocation } from '../api/geo';
 import { fetchUserByFirebaseUid, registerUser } from '../api/auth';
 import { fetchPlatformAccess } from '../api/parent';
-import { setApiAuthToken } from '../api/client';
+import { setApiAuthToken, type ApiRequestError } from '../api/client';
 import { firebaseAuth } from '../config/firebase';
 import { clearAuthMeta } from './authStorage';
 import type { BackendUser } from '../types/auth';
@@ -113,6 +113,39 @@ export async function signUpParent(params: {
   );
 }
 
+/**
+ * Firebase can exist without a Nest row (local DB replica, failed signup, etc.).
+ * On 404, register the parent so login/restore still works.
+ */
+export async function ensureBackendUser(
+  firebaseUser: FirebaseUser,
+): Promise<BackendUser> {
+  try {
+    return await fetchUserByFirebaseUid(firebaseUser.uid);
+  } catch (error) {
+    const status = (error as ApiRequestError)?.status;
+    if (status !== 404) {
+      throw error;
+    }
+  }
+
+  const geo = await detectGeoLocation();
+  const email = firebaseUser.email?.trim().toLowerCase();
+  const name =
+    firebaseUser.displayName?.trim() ||
+    email?.split('@')[0] ||
+    'Parent';
+
+  return registerUser({
+    firebaseUserId: firebaseUser.uid,
+    name,
+    email,
+    provider: 'firebase',
+    countryCode: geo?.country_code,
+    countryName: geo?.country_name,
+  });
+}
+
 async function finishLogin(
   firebaseUser: FirebaseUser,
   backendUser: BackendUser,
@@ -169,7 +202,7 @@ export async function loginParent(params: {
   let idToken = await firebaseUser.getIdToken();
   setApiAuthToken(idToken);
 
-  const backendUser = await fetchUserByFirebaseUid(firebaseUser.uid);
+  const backendUser = await ensureBackendUser(firebaseUser);
 
   idToken = await firebaseUser.getIdToken(true);
   setApiAuthToken(idToken);

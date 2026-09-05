@@ -118,6 +118,7 @@ export default function SearchScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const parentSession = useAppStore((s) => s.parentSession);
+  const platformAccess = useAppStore((s) => s.platformAccess);
   const mockVideos = useAppStore((s) => s.videos);
   const [searchQuery, setSearchQuery] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
@@ -125,8 +126,15 @@ export default function SearchScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedLanguageId, setSelectedLanguageId] = useState<string | null>(null);
   const [apiVideos, setApiVideos] = useState<BrowseVideo[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const useApi = !!parentSession?.idToken;
+  const canBrowseAll =
+    (platformAccess?.hasFullVideoAccess ?? false) ||
+    (platformAccess?.hasAccess ?? false) ||
+    (platformAccess?.freeUnlimitedBrowse ?? false);
   const { headerTop } = useAppInsets();
   const listBottomPad = useStackScreenPadding();
 
@@ -142,28 +150,46 @@ export default function SearchScreen() {
       .catch(() => {});
   }, [parentSession?.idToken]);
 
-  const loadApiResults = useCallback(async () => {
-    if (!useApi) return;
-    setLoading(true);
-    try {
-      const res = await browseVideos({
-        search: searchQuery || undefined,
-        categoryId: selectedCategoryId ?? undefined,
-        languageId: selectedLanguageId ?? undefined,
-        limit: 40,
-      });
-      setApiVideos(res.data);
-    } catch {
-      setApiVideos([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [useApi, searchQuery, selectedCategoryId, selectedLanguageId]);
+  const loadApiResults = useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (!useApi) return;
+      if (!canBrowseAll && append) return;
+
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      try {
+        const res = await browseVideos({
+          search: searchQuery || undefined,
+          categoryId: selectedCategoryId ?? undefined,
+          languageId: selectedLanguageId ?? undefined,
+          page: pageNum,
+          limit: 30,
+        });
+        setApiVideos((prev) => (append ? [...prev, ...res.data] : res.data));
+        setHasMore(canBrowseAll && pageNum < res.meta.totalPages);
+      } catch {
+        if (!append) setApiVideos([]);
+        setHasMore(false);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [useApi, canBrowseAll, searchQuery, selectedCategoryId, selectedLanguageId],
+  );
 
   useEffect(() => {
-    const timer = setTimeout(() => void loadApiResults(), 300);
+    setPage(1);
+    const timer = setTimeout(() => void loadApiResults(1, false), 300);
     return () => clearTimeout(timer);
   }, [loadApiResults]);
+
+  const loadMore = useCallback(() => {
+    if (!useApi || loadingMore || !hasMore) return;
+    const next = page + 1;
+    setPage(next);
+    void loadApiResults(next, true);
+  }, [useApi, loadingMore, hasMore, page, loadApiResults]);
 
   const filteredVideos = useMemo(() => {
     if (useApi) {
@@ -263,6 +289,13 @@ export default function SearchScreen() {
           ListHeaderComponent={listHeader}
           contentContainerStyle={[styles.list, { paddingBottom: listBottomPad }]}
           keyboardShouldPersistTaps="handled"
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+            ) : null
+          }
           renderItem={({ item }) => (
             <VideoCard
               video={item}

@@ -25,11 +25,18 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     super.onServiceConnected()
+    AppBlockPrefs.setAccessibilityConnected(this, true)
     handler.post(pollRunnable)
+  }
+
+  override fun onUnbind(intent: Intent?): Boolean {
+    AppBlockPrefs.setAccessibilityConnected(this, false)
+    return super.onUnbind(intent)
   }
 
   override fun onDestroy() {
     handler.removeCallbacks(pollRunnable)
+    AppBlockPrefs.setAccessibilityConnected(this, false)
     super.onDestroy()
   }
 

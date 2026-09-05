@@ -8,18 +8,22 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
-import { BRAND_ACCENT, BRAND_PRIMARY } from '../../constants/branding';
+import { BRAND_ACCENT } from '../../constants/branding';
 import { useTheme } from '../../context/ThemeContext';
 import { formatDuration, type BrowseVideo } from '../../api/browse';
-import { radius, spacing, typography } from '../../theme/colors';
+import { radius } from '../../theme/colors';
 import AssignActionButton, { type AssignButtonState } from './AssignActionButton';
 import PremiumContentBadge, { PremiumLockOverlay } from '../ui/PremiumContentBadge';
 import CachedImage from '../ui/CachedImage';
+import {
+  DISCOVER_GRID_GAP,
+  DISCOVER_GUTTER,
+  DISCOVER_ROW_THUMB_H,
+  DISCOVER_ROW_THUMB_W,
+} from './discoverLayout';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const H_PAD = spacing.lg;
-const GRID_GAP = spacing.sm;
-export const SHORT_COL_W = (SCREEN_W - H_PAD * 2 - GRID_GAP) / 2;
+export const SHORT_COL_W = (SCREEN_W - DISCOVER_GUTTER * 2 - DISCOVER_GRID_GAP) / 2;
 const SHORT_THUMB_H = SHORT_COL_W * (16 / 9);
 
 type Layout = 'video' | 'short';
@@ -53,10 +57,10 @@ function DiscoverMediaCard({
     return (
       <View style={styles.gridWrap}>
         <Pressable onPress={onPress} style={styles.gridPress}>
-          <View style={styles.gridThumb}>
+          <View style={[styles.gridThumb, { backgroundColor: colors.border }]}>
             <CachedImage uri={item.thumbnailUrl} style={styles.thumbImage} />
             <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.75)']}
+              colors={['transparent', 'rgba(0,0,0,0.7)']}
               style={styles.gridGradient}
             />
             <View style={styles.shortTag}>
@@ -72,9 +76,6 @@ function DiscoverMediaCard({
             <View style={styles.durationBadge}>
               <Text style={styles.durationText}>{formatDuration(item.durationSecs)}</Text>
             </View>
-            <View style={styles.gridPlay}>
-              <Icon name="play" size={22} color="#fff" />
-            </View>
             <Text style={styles.gridTitle} numberOfLines={2}>
               {item.title}
             </Text>
@@ -86,18 +87,14 @@ function DiscoverMediaCard({
             disabled={!onChannelPress}
             style={styles.gridChannel}
           >
-            <Text style={[styles.gridChannelText, { color: colors.primary }]} numberOfLines={1}>
+            <Text style={[styles.gridChannelText, { color: colors.textMuted }]} numberOfLines={1}>
               {item.channelName}
             </Text>
           </Pressable>
           {onAdd && !premiumLocked ? (
-            <AssignActionButton
-              state={assignState}
-              onPress={onAdd}
-              variant="inline"
-            />
+            <AssignActionButton state={assignState} onPress={onAdd} variant="inline" />
           ) : premiumLocked ? (
-            <Icon name="lock-closed" size={20} color={colors.textMuted} />
+            <Icon name="lock-closed" size={16} color={colors.textMuted} />
           ) : null}
         </View>
       </View>
@@ -105,60 +102,45 @@ function DiscoverMediaCard({
   }
 
   return (
-    <View style={styles.videoWrap}>
-      <Pressable onPress={onPress} style={styles.videoThumbPress}>
-        <View style={styles.videoThumb}>
+    <View style={[styles.row, { borderBottomColor: colors.border }]}>
+      <Pressable onPress={onPress} style={styles.rowThumbPress}>
+        <View style={[styles.rowThumb, { backgroundColor: colors.border }]}>
           <CachedImage uri={item.thumbnailUrl} style={styles.thumbImage} />
-          <View style={styles.videoTag}>
-            <Icon name="film-outline" size={10} color="#fff" />
-            <Text style={styles.videoTagText}>Video</Text>
-          </View>
           {premiumLocked ? (
             <>
-              <PremiumContentBadge style={styles.premiumBadgeVideo} />
-              <PremiumLockOverlay />
+              <PremiumContentBadge compact style={styles.premiumBadgeRow} />
+              <PremiumLockOverlay compact />
             </>
           ) : null}
           <View style={styles.durationBadge}>
             <Text style={styles.durationText}>{formatDuration(item.durationSecs)}</Text>
           </View>
-          <View style={styles.videoPlay}>
-            <View style={styles.playCircle}>
-              <Icon name="play" size={28} color="#fff" />
-            </View>
-          </View>
         </View>
       </Pressable>
 
-      <Text style={[styles.videoTitle, { color: colors.text }]} numberOfLines={2}>
-        {item.title}
-      </Text>
-      <Pressable
-        onPress={onChannelPress}
-        disabled={!onChannelPress}
-        style={styles.channelRow}
-      >
-        <Icon name="folder-outline" size={15} color={colors.primary} />
-        <Text style={[styles.channelName, { color: colors.primary }]} numberOfLines={1}>
-          {item.channelName}
+      <Pressable onPress={onPress} style={styles.rowMeta}>
+        <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={2}>
+          {item.title}
         </Text>
-        {onChannelPress ? (
-          <Icon name="chevron-forward" size={14} color={colors.textMuted} />
-        ) : null}
+        <Pressable
+          onPress={onChannelPress}
+          disabled={!onChannelPress}
+          hitSlop={4}
+          style={styles.rowChannelHit}
+        >
+          <Text style={[styles.rowChannel, { color: colors.textSecondary }]} numberOfLines={1}>
+            {item.channelName}
+          </Text>
+        </Pressable>
       </Pressable>
-      {onAdd && !premiumLocked ? (
-        <AssignActionButton
-          state={assignState}
-          onPress={onAdd}
-          variant="full"
-          style={styles.addBtnSpacing}
-        />
-      ) : premiumLocked ? (
-        <View style={[styles.premiumHint, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
-          <Icon name="diamond" size={14} color={colors.primary} />
-          <Text style={[styles.premiumHintText, { color: colors.primary }]}>Subscribe to add</Text>
-        </View>
-      ) : null}
+
+      <View style={styles.rowAction}>
+        {onAdd && !premiumLocked ? (
+          <AssignActionButton state={assignState} onPress={onAdd} variant="compact" />
+        ) : premiumLocked ? (
+          <Icon name="lock-closed" size={16} color={colors.textMuted} />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -166,16 +148,15 @@ function DiscoverMediaCard({
 const styles = StyleSheet.create({
   gridWrap: {
     width: SHORT_COL_W,
-    marginBottom: spacing.md,
+    marginBottom: 14,
   },
   gridPress: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     overflow: 'hidden',
   },
   gridThumb: {
     width: SHORT_COL_W,
     height: SHORT_THUMB_H,
-    backgroundColor: '#e2e8f0',
     position: 'relative',
   },
   thumbImage: {
@@ -187,39 +168,24 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '45%',
+    height: '48%',
   },
   shortTag: {
     position: 'absolute',
-    top: 8,
-    left: 8,
+    top: 6,
+    left: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
     backgroundColor: BRAND_ACCENT,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   shortTagText: {
     color: '#fff',
     fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  gridPlay: {
-    position: 'absolute',
-    top: '38%',
-    alignSelf: 'center',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingLeft: 3,
+    fontWeight: '700',
   },
   gridTitle: {
     position: 'absolute',
@@ -228,8 +194,8 @@ const styles = StyleSheet.create({
     bottom: 8,
     color: '#fff',
     fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
+    fontWeight: '600',
+    lineHeight: 15,
   },
   gridFooter: {
     flexDirection: 'row',
@@ -240,114 +206,73 @@ const styles = StyleSheet.create({
   gridChannel: { flex: 1 },
   gridChannelText: {
     fontSize: 11,
-    fontWeight: '600',
-  },
-  videoWrap: {
-    marginBottom: spacing.lg,
-  },
-  videoThumbPress: {
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  videoThumb: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    backgroundColor: '#e2e8f0',
-    position: 'relative',
-  },
-  videoTag: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: BRAND_PRIMARY,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-  },
-  videoTagText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    fontWeight: '500',
   },
   durationBadge: {
     position: 'absolute',
-    right: 8,
-    bottom: 8,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    paddingHorizontal: 6,
+    right: 5,
+    bottom: 5,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 5,
+    borderRadius: 3,
   },
   durationText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: '700',
-  },
-  videoPlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingLeft: 3,
-  },
-  videoTitle: {
-    ...typography.bodyBold,
-    fontSize: 15,
-    lineHeight: 21,
-    marginTop: spacing.sm,
-  },
-  channelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 4,
-  },
-  channelName: {
-    flex: 1,
-    fontSize: 13,
     fontWeight: '600',
-  },
-  addBtnSpacing: {
-    marginTop: 8,
   },
   premiumBadgeShort: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 6,
+    right: 6,
   },
-  premiumBadgeVideo: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-  },
-  premiumHint: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  premiumHintText: {
-    fontSize: 13,
-    fontWeight: '700',
+  rowThumbPress: {
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  rowThumb: {
+    width: DISCOVER_ROW_THUMB_W,
+    height: DISCOVER_ROW_THUMB_H,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  rowMeta: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  rowTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 19,
+    letterSpacing: -0.1,
+  },
+  rowChannelHit: {
+    alignSelf: 'flex-start',
+  },
+  rowChannel: {
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  rowAction: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumBadgeRow: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
   },
 });
 

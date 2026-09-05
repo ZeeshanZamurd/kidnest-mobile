@@ -18,6 +18,8 @@ export type PlatformAccess = {
   freeMaxChannels?: number | null;
   /** Max videos included per assigned channel on free plan; null = unlimited. */
   freeChannelVideoLimit?: number | null;
+  /** When true, free users are not capped on Discover browse. */
+  freeUnlimitedBrowse?: boolean;
   subscription: {
     status: string;
     planName: string;

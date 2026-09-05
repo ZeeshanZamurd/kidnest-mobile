@@ -107,6 +107,8 @@ function ChildPickerRow({
         <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
           <Icon name="checkmark" size={16} color="#fff" />
         </View>
+      ) : selectOnly ? (
+        <Icon name="ellipse-outline" size={22} color={colors.textMuted} />
       ) : (
         <Icon name="add-circle-outline" size={24} color={colors.primary} />
       )}

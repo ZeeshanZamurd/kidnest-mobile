@@ -362,6 +362,36 @@ class AppBlockModule(private val reactContext: ReactApplicationContext) :
     val pkg = reactContext.packageName
     val serviceSimple = AppBlockAccessibilityService::class.java.simpleName
     val serviceFull = AppBlockAccessibilityService::class.java.name
+    val expectedFlat = ComponentName(pkg, serviceFull).flattenToString()
+    val expectedShort = ComponentName(pkg, ".$serviceSimple").flattenToString()
+    val pkgLower = pkg.lowercase()
+
+    fun entryMatches(entry: String): Boolean {
+      val lower = entry.trim().lowercase()
+      if (lower.isEmpty()) return false
+      return lower.startsWith("$pkgLower/") ||
+        lower == expectedFlat.lowercase() ||
+        lower == expectedShort.lowercase() ||
+        (lower.contains(pkgLower) &&
+          (lower.contains("appblockaccessibility") || lower.contains(serviceSimple.lowercase())))
+    }
+
+    var listedInSettings: Boolean? = null
+    val enabledServices = Settings.Secure.getString(
+      reactContext.contentResolver,
+      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+    )
+    if (enabledServices != null) {
+      listedInSettings = enabledServices.split(':').any(::entryMatches)
+      if (listedInSettings == false) {
+        // User turned it off — clear any stale live flag.
+        AppBlockPrefs.setAccessibilityConnected(reactContext, false)
+        return false
+      }
+      if (listedInSettings == true) {
+        return true
+      }
+    }
 
     try {
       val am = reactContext.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
@@ -369,10 +399,7 @@ class AppBlockModule(private val reactContext: ReactApplicationContext) :
         @Suppress("DEPRECATION")
         val services = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
         if (services.any {
-          val si = it.resolveInfo.serviceInfo
-          si.packageName.equals(pkg, ignoreCase = true) &&
-            (si.name.contains("AppBlockAccessibility", ignoreCase = true) ||
-              si.name.endsWith(serviceSimple, ignoreCase = true))
+          it.resolveInfo.serviceInfo.packageName.equals(pkg, ignoreCase = true)
         }) {
           return true
         }
@@ -381,21 +408,12 @@ class AppBlockModule(private val reactContext: ReactApplicationContext) :
       Log.w("KidNestAppBlock", "AccessibilityManager check failed", e)
     }
 
-    val enabledServices = Settings.Secure.getString(
-      reactContext.contentResolver,
-      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ) ?: return false
-
-    if (enabledServices.isBlank()) return false
-
-    return enabledServices.split(':').any { entry ->
-      val normalized = entry.trim()
-      normalized.contains(pkg, ignoreCase = true) &&
-        (normalized.contains("AppBlockAccessibility", ignoreCase = true) ||
-          normalized.contains(serviceSimple, ignoreCase = true) ||
-          normalized.equals("$pkg/$serviceFull", ignoreCase = true) ||
-          normalized.equals("$pkg/.$serviceSimple", ignoreCase = true))
+    // Live service connection — useful right after grant / process restart.
+    if (AppBlockPrefs.isAccessibilityConnected(reactContext)) {
+      return true
     }
+
+    return false
   }
 
   companion object {

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  findNodeHandle,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -9,6 +11,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeSyntheticEvent,
+  type TextInputFocusEventData,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +40,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Auth'>;
 type FocusedField = 'name' | 'email' | 'password' | null;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const FOCUS_SCROLL_OFFSET = 28;
 
 function mapAuthErrorMessage(message: string, t: (key: string) => string): string {
   const lower = message.toLowerCase();
@@ -70,6 +75,9 @@ export default function AuthScreen() {
   const { headerTop, stackBottom } = useAppInsets();
   const setParentSession = useAppStore((s) => s.setParentSession);
 
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollContentRef = useRef<View>(null);
+
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -83,13 +91,59 @@ export default function AuthScreen() {
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollFieldIntoView = useCallback((target: View | null) => {
+    if (!target || !scrollRef.current || !scrollContentRef.current) return;
+    const scrollNode = findNodeHandle(scrollContentRef.current);
+    if (!scrollNode) return;
+
+    // Defer until keyboard has started resizing the window
+    requestAnimationFrame(() => {
+      target.measureLayout(
+        scrollNode,
+        (_x, y) => {
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, y - FOCUS_SCROLL_OFFSET),
+            animated: true,
+          });
+        },
+        () => undefined,
+      );
+    });
+  }, []);
+
+  const onFieldFocus = useCallback(
+    (field: FocusedField) =>
+      (e: NativeSyntheticEvent<TextInputFocusEventData>) => {
+        setFocusedField(field);
+        const node = e.target as unknown as View;
+        setTimeout(() => scrollFieldIntoView(node), Platform.OS === 'ios' ? 50 : 120);
+      },
+    [scrollFieldIntoView],
+  );
 
   const labelColor = colors.text;
   const subtitleColor = colors.textSecondary;
 
   const inputBorder = (focused: boolean) => ({
     borderColor: focused ? colors.primary : colors.border,
-    borderWidth: focused ? 2 : 1,
+    borderWidth: focused ? 1.5 : 1,
   });
 
   const handleSubmit = async () => {
@@ -116,6 +170,7 @@ export default function AuthScreen() {
     }
 
     setLoading(true);
+    Keyboard.dismiss();
 
     try {
       const session = isLogin
@@ -153,166 +208,208 @@ export default function AuthScreen() {
     setConfirmPin('');
     setPinError(null);
     setConfirmPinError(null);
+    Keyboard.dismiss();
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const handleForgotPassword = () => {
     Alert.alert(t('auth_forgot_password'), t('auth_forgot_password_soon'));
   };
 
+  const bottomPad =
+    stackBottom +
+    spacing.lg +
+    (keyboardHeight > 0 ? Math.max(keyboardHeight * 0.15, spacing.xl) : spacing.xl);
+
   return (
     <GradientBackground>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerTop : 0}
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={[
             styles.scroll,
-            { paddingTop: headerTop, paddingBottom: stackBottom + spacing.lg },
+            {
+              paddingTop: headerTop + spacing.sm,
+              paddingBottom: bottomPad,
+            },
           ]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          contentInsetAdjustmentBehavior="always"
         >
-          <Animated.View entering={FadeInDown.duration(450).delay(80)} style={styles.hero}>
-            <View style={styles.logoWrap}>
-              <AppLogo size={LOGO_SIZES.auth} shadow={false} />
-            </View>
-            <Text style={[styles.heading, { color: colors.text }]}>
-              {isLogin ? t('welcome_back') : t('create_account')}
-            </Text>
-            <Text style={[styles.sub, { color: subtitleColor }]}>{t('tagline')}</Text>
-          </Animated.View>
+          <View ref={scrollContentRef} collapsable={false}>
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(40)}
+              style={[styles.hero, !isLogin && styles.heroCompact]}
+            >
+              <AppLogo size={isLogin ? LOGO_SIZES.auth : LOGO_SIZES.profileSelection} shadow={false} />
+              <Text style={[styles.heading, { color: colors.text }]}>
+                {isLogin ? t('welcome_back') : t('create_account')}
+              </Text>
+              <Text style={[styles.sub, { color: subtitleColor }]}>
+                {isLogin ? t('tagline') : t('auth_signup_subtitle')}
+              </Text>
+            </Animated.View>
 
-          <Animated.View entering={FadeInDown.duration(450).delay(160)} style={styles.form}>
-            {!isLogin && (
+            <Animated.View
+              entering={FadeInDown.duration(400).delay(100)}
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  shadowColor: colors.text,
+                },
+              ]}
+            >
+              {!isLogin && (
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: labelColor }]}>{t('full_name')}</Text>
+                  <TextInput
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    editable={!loading}
+                    placeholder={t('auth_placeholder_name')}
+                    placeholderTextColor={colors.textMuted}
+                    onFocus={onFieldFocus('name')}
+                    onBlur={() => setFocusedField(null)}
+                    style={[
+                      styles.input,
+                      inputBorder(focusedField === 'name'),
+                      { backgroundColor: colors.background, color: colors.text },
+                    ]}
+                  />
+                </View>
+              )}
+
               <View style={styles.field}>
-                <Text style={[styles.label, { color: labelColor }]}>{t('full_name')}</Text>
+                <Text style={[styles.label, { color: labelColor }]}>{t('email')}</Text>
                 <TextInput
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    if (emailError) setEmailError(null);
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
                   editable={!loading}
-                  onFocus={() => setFocusedField('name')}
+                  placeholder={t('auth_placeholder_email')}
+                  placeholderTextColor={colors.textMuted}
+                  onFocus={onFieldFocus('email')}
                   onBlur={() => setFocusedField(null)}
                   style={[
                     styles.input,
-                    inputBorder(focusedField === 'name'),
-                    {
-                      backgroundColor: colors.surface,
-                      color: colors.text,
-                    },
+                    inputBorder(focusedField === 'email'),
+                    { backgroundColor: colors.background, color: colors.text },
+                    emailError ? { borderColor: colors.danger, borderWidth: 1.5 } : null,
+                  ]}
+                />
+                {emailError ? (
+                  <Text style={[styles.fieldError, { color: colors.danger }]}>{emailError}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.field}>
+                <View style={styles.passwordHeader}>
+                  <Text style={[styles.label, styles.labelInline, { color: labelColor }]}>
+                    {t('password')}
+                  </Text>
+                  {isLogin ? (
+                    <Pressable
+                      onPress={handleForgotPassword}
+                      disabled={loading}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.forgotLink, { color: colors.primary }]}>
+                        {t('auth_forgot_password')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <SecureTextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  editable={!loading}
+                  autoComplete={isLogin ? 'password' : 'new-password'}
+                  textContentType={isLogin ? 'password' : 'newPassword'}
+                  placeholder={t('auth_placeholder_password')}
+                  placeholderTextColor={colors.textMuted}
+                  onFocus={(e) => {
+                    setPasswordFocused(true);
+                    const node = e.target as unknown as View;
+                    setTimeout(() => scrollFieldIntoView(node), Platform.OS === 'ios' ? 50 : 120);
+                  }}
+                  onBlur={() => setPasswordFocused(false)}
+                  style={[
+                    styles.input,
+                    inputBorder(passwordFocused),
+                    { backgroundColor: colors.background, color: colors.text },
                   ]}
                 />
               </View>
-            )}
 
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: labelColor }]}>{t('email')}</Text>
-              <TextInput
-                value={email}
-                onChangeText={(value) => {
-                  setEmail(value);
-                  if (emailError) setEmailError(null);
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-                onFocus={() => setFocusedField('email')}
-                onBlur={() => setFocusedField(null)}
-                style={[
-                  styles.input,
-                  inputBorder(focusedField === 'email'),
-                  {
-                    backgroundColor: colors.surface,
-                    color: colors.text,
-                  },
-                  emailError ? { borderColor: colors.danger, borderWidth: 2 } : null,
-                ]}
-              />
-              {emailError ? (
-                <Text style={[styles.fieldError, { color: colors.danger }]}>{emailError}</Text>
+              {!isLogin && (
+                <View style={styles.pinBlock}>
+                  <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+                    {t('auth_pin_section')}
+                  </Text>
+                  <PinInputField
+                    label={t('parent_pin_create')}
+                    value={pin}
+                    onChangeText={setPin}
+                    error={pinError}
+                    editable={!loading}
+                    showHint
+                    onFocusScroll={scrollFieldIntoView}
+                  />
+                  <PinInputField
+                    label={t('parent_pin_confirm')}
+                    value={confirmPin}
+                    onChangeText={setConfirmPin}
+                    error={confirmPinError}
+                    editable={!loading}
+                    showHint={false}
+                    onFocusScroll={scrollFieldIntoView}
+                  />
+                </View>
+              )}
+
+              {error ? (
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: colors.danger + '12',
+                      borderColor: colors.danger + '40',
+                    },
+                  ]}
+                >
+                  <Icon name="alert-circle" size={18} color={colors.danger} style={styles.errorIcon} />
+                  <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+                </View>
               ) : null}
-            </View>
 
-            <View style={styles.field}>
-              <View style={styles.passwordHeader}>
-                <Text style={[styles.label, styles.labelInline, { color: labelColor }]}>
-                  {t('password')}
-                </Text>
-                {isLogin ? (
-                  <Pressable
-                    onPress={handleForgotPassword}
-                    disabled={loading}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                  >
-                    <Text style={[styles.forgotLink, { color: colors.primary }]}>
-                      {t('auth_forgot_password')}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              <SecureTextInput
-                value={password}
-                onChangeText={setPassword}
-                editable={!loading}
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-                style={[
-                  styles.input,
-                  inputBorder(passwordFocused),
-                  {
-                    backgroundColor: colors.surface,
-                    color: colors.text,
-                  },
-                ]}
+              <PrimaryButton
+                label={isLogin ? t('login') : t('register')}
+                loadingLabel={isLogin ? t('auth_signing_in') : t('auth_creating_account')}
+                onPress={handleSubmit}
+                loading={loading}
+                disabled={loading}
+                style={styles.submit}
               />
-            </View>
-
-            {!isLogin && (
-              <>
-                <PinInputField
-                  label={t('parent_pin_create')}
-                  value={pin}
-                  onChangeText={setPin}
-                  error={pinError}
-                  editable={!loading}
-                />
-                <PinInputField
-                  label={t('parent_pin_confirm')}
-                  value={confirmPin}
-                  onChangeText={setConfirmPin}
-                  error={confirmPinError}
-                  editable={!loading}
-                />
-              </>
-            )}
-
-            {error ? (
-              <View
-                style={[
-                  styles.errorBox,
-                  {
-                    backgroundColor: colors.danger + '14',
-                    borderColor: colors.danger + '55',
-                  },
-                ]}
-              >
-                <Icon name="alert-circle" size={20} color={colors.danger} style={styles.errorIcon} />
-                <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
-              </View>
-            ) : null}
-
-            <PrimaryButton
-              label={isLogin ? t('login') : t('register')}
-              loadingLabel={isLogin ? t('auth_signing_in') : t('auth_creating_account')}
-              onPress={handleSubmit}
-              loading={loading}
-              disabled={loading}
-              style={styles.submit}
-            />
+            </Animated.View>
 
             <View style={styles.switchRow}>
               <Text style={[styles.switchPrompt, { color: subtitleColor }]}>
@@ -324,7 +421,7 @@ export default function AuthScreen() {
                 </Text>
               </Pressable>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </GradientBackground>
@@ -336,33 +433,52 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
-    minHeight: '100%',
+    justifyContent: 'flex-start',
   },
   hero: {
     alignItems: 'center',
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
   },
-  logoWrap: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
+  heroCompact: {
+    marginBottom: spacing.md,
   },
   heading: {
-    ...typography.hero,
-    marginBottom: spacing.sm,
+    ...typography.h2,
     textAlign: 'center',
+    marginTop: spacing.sm,
   },
   sub: {
-    ...typography.body,
+    ...typography.caption,
     fontWeight: '500',
     textAlign: 'center',
-    maxWidth: 300,
-    lineHeight: 22,
+    maxWidth: 280,
+    lineHeight: 18,
   },
-  form: {
+  card: {
     width: '100%',
+    borderRadius: radius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 3,
   },
   field: { marginBottom: spacing.md },
+  pinBlock: {
+    marginBottom: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  sectionLabel: {
+    ...typography.tiny,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+  },
   label: {
     ...typography.caption,
     fontWeight: '600',
@@ -382,9 +498,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
     ...typography.body,
   },
   fieldError: {
@@ -406,17 +522,18 @@ const styles = StyleSheet.create({
   errorText: {
     ...typography.caption,
     flex: 1,
-    lineHeight: 20,
+    lineHeight: 18,
     fontWeight: '500',
   },
-  submit: { marginTop: spacing.sm, marginBottom: spacing.lg },
+  submit: { marginTop: spacing.xs, marginBottom: spacing.sm },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   switchPrompt: {
     ...typography.body,

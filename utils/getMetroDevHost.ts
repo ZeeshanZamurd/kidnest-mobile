@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 
 /**
  * Reads the host from Metro's bundle URL — same machine the phone is connected to for dev.
@@ -20,7 +20,8 @@ export function getMetroDevHost(): string | null {
     const host = hostPort.split(':')[0]?.trim();
 
     if (!host || host === 'localhost' || host === '127.0.0.1') {
-      return Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+      // Let resolveApiBaseUrl choose USB reverse / LAN / emulator — do not force 10.0.2.2 here
+      return null;
     }
 
     return host;

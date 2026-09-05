@@ -314,10 +314,23 @@ export function useAssignToChild() {
 
   const requestToggleChannel = useCallback(
     (channel: BrowseChannel) => {
-      if (!canAssignChannels) {
+      const premiumLocked = Boolean(channel.isPremium) && !hasFullVideoAccess;
+      if (premiumLocked) {
         KidAlert.alert(
-          'Subscribe for channels',
-          'Free plan includes up to 10 individual videos. Subscribe to add whole channels.',
+          'Premium channel',
+          'Subscribe to add this channel for your child.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
+          ],
+        );
+        return;
+      }
+
+      if (!canAssignChannels && !assignedChannelIds.has(channel.id)) {
+        KidAlert.alert(
+          'Channel limit',
+          'Subscribe to add more channels for your family.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'View plans', onPress: () => navigation.navigate('Subscription') },
@@ -346,7 +359,15 @@ export function useAssignToChild() {
         },
       ]);
     },
-    [assignedChannelIds, assignToActiveChild, canAssignChannels, navigation, performRemoveChannel, targetChildId],
+    [
+      assignedChannelIds,
+      assignToActiveChild,
+      canAssignChannels,
+      hasFullVideoAccess,
+      navigation,
+      performRemoveChannel,
+      targetChildId,
+    ],
   );
 
   const getVideoAssignState = useCallback(

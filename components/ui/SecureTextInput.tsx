@@ -38,7 +38,7 @@ export default function SecureTextInput({ style, containerStyle, editable = true
         <Icon
           name={visible ? 'eye-off-outline' : 'eye-outline'}
           size={22}
-          color={editable ? colors.textMuted : colors.border}
+          color={editable ? colors.textSecondary : colors.border}
         />
       </Pressable>
     </View>

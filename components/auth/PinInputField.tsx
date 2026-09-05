@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import SecureTextInput from '../ui/SecureTextInput';
 import { useTheme } from '../../context/ThemeContext';
@@ -11,6 +11,9 @@ type Props = {
   onChangeText: (value: string) => void;
   error?: string | null;
   editable?: boolean;
+  /** Show helper under the field (default true). Use false on confirm PIN. */
+  showHint?: boolean;
+  onFocusScroll?: (target: View | null) => void;
 };
 
 export default function PinInputField({
@@ -19,17 +22,21 @@ export default function PinInputField({
   onChangeText,
   error,
   editable = true,
+  showHint = true,
+  onFocusScroll,
 }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const wrapRef = useRef<View>(null);
+  const [focused, setFocused] = React.useState(false);
 
   const handleChange = (text: string) => {
     onChangeText(text.replace(/\D/g, '').slice(0, 4));
   };
 
   return (
-    <View style={styles.field}>
-      <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
+    <View ref={wrapRef} collapsable={false} style={styles.field}>
+      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
       <SecureTextInput
         value={value}
         onChangeText={handleChange}
@@ -38,38 +45,51 @@ export default function PinInputField({
         editable={editable}
         placeholder="••••"
         placeholderTextColor={colors.textMuted}
+        onFocus={() => {
+          setFocused(true);
+          setTimeout(
+            () => onFocusScroll?.(wrapRef.current),
+            Platform.OS === 'ios' ? 50 : 120,
+          );
+        }}
+        onBlur={() => setFocused(false)}
         style={[
           styles.input,
           {
-            backgroundColor: colors.surface,
+            backgroundColor: colors.background,
             color: colors.text,
-            borderColor: error ? colors.danger : colors.border,
+            borderColor: error ? colors.danger : focused ? colors.primary : colors.border,
+            borderWidth: error || focused ? 1.5 : 1,
           },
         ]}
         accessibilityLabel={label}
       />
       {error ? (
         <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
-      ) : (
+      ) : showHint ? (
         <Text style={[styles.hint, { color: colors.textMuted }]}>{t('pin_hint')}</Text>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   field: { marginBottom: spacing.md },
-  label: { ...typography.caption, marginBottom: 6 },
+  label: {
+    ...typography.caption,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
   input: {
-    borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
     ...typography.body,
-    letterSpacing: 8,
+    letterSpacing: 10,
     textAlign: 'center',
     fontSize: 20,
+    fontWeight: '600',
   },
-  hint: { ...typography.tiny, marginTop: 6 },
+  hint: { ...typography.tiny, marginTop: 6, lineHeight: 16 },
   error: { ...typography.tiny, marginTop: 6 },
 });

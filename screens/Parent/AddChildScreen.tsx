@@ -21,6 +21,7 @@ import { fetchParentDashboard } from '../../api/parent';
 import { useAppInsets } from '../../hooks/useAppInsets';
 import { useStackScreenPadding } from '../../hooks/useScreenPadding';
 import { createChildProfile, refreshParentChildren } from '../../services/childService';
+import { getApiBaseUrl } from '../../api/client';
 import { useAppStore } from '../../store/useAppStore';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
@@ -98,6 +99,13 @@ export default function AddChildScreen() {
       navigation.goBack();
     } catch (err) {
       const message = err instanceof Error ? err.message : t('add_child_error');
+      if (__DEV__) {
+        console.error('[AddChild] failed', {
+          message,
+          apiBase: getApiBaseUrl(),
+          err,
+        });
+      }
       if (message.toLowerCase().includes('limit')) {
         setFormError(t('child_limit_reached'));
       } else {
@@ -184,6 +192,11 @@ export default function AddChildScreen() {
           {formError ? (
             <View style={[styles.errorBox, { backgroundColor: colors.danger + '18' }]}>
               <Text style={[styles.errorText, { color: colors.danger }]}>{formError}</Text>
+              {__DEV__ ? (
+                <Text style={[styles.debugText, { color: colors.textMuted }]}>
+                  API: {getApiBaseUrl()}
+                </Text>
+              ) : null}
               {atLimit ? (
                 <PrimaryButton
                   label={t('view_subscription')}
@@ -239,6 +252,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   errorText: { ...typography.caption, lineHeight: 20 },
+  debugText: { ...typography.tiny, marginTop: 8 },
   limitBtn: { marginTop: spacing.sm },
   submit: { marginTop: spacing.md },
 });

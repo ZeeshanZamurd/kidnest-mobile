@@ -7,6 +7,7 @@ object AppBlockPrefs {
   private const val KEY_BLOCKED = "blocked_packages"
   private const val KEY_MONITORING = "monitoring_enabled"
   private const val KEY_BLOCK_SCREEN_ACTIVE = "block_screen_active"
+  private const val KEY_ACCESSIBILITY_CONNECTED = "accessibility_connected"
 
   fun setBlockedPackages(context: Context, packages: Set<String>) {
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -46,5 +47,17 @@ object AppBlockPrefs {
   fun isBlockScreenActive(context: Context): Boolean {
     return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       .getBoolean(KEY_BLOCK_SCREEN_ACTIVE, false)
+  }
+
+  fun setAccessibilityConnected(context: Context, connected: Boolean) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean(KEY_ACCESSIBILITY_CONNECTED, connected)
+      .commit()
+  }
+
+  fun isAccessibilityConnected(context: Context): Boolean {
+    return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+      .getBoolean(KEY_ACCESSIBILITY_CONNECTED, false)
   }
 }

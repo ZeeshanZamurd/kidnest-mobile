@@ -207,7 +207,8 @@ export default function ChannelDetailScreen() {
             <SelectedChildBar
               children={apiChildren}
               activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
-              onPress={openPickerForSelect}
+              onSelectChild={(id) => void confirmChild(id)}
+              onOpenPicker={openPickerForSelect}
             />
           </View>
         ) : null}

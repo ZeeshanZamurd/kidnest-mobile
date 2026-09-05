@@ -23,6 +23,8 @@ type Props = {
   onFavorite?: () => void;
   showStatus?: boolean;
   horizontal?: boolean;
+  /** Narrower horizontal card for Dashboard carousels */
+  compact?: boolean;
   /** Tap play on thumbnail to preview inline (no full-screen player). */
   inlinePlay?: boolean;
   isPlayingInline?: boolean;
@@ -36,6 +38,7 @@ function VideoCard({
   onFavorite,
   showStatus = false,
   horizontal = false,
+  compact = false,
   inlinePlay = false,
   isPlayingInline = false,
   onStartInline,
@@ -97,6 +100,7 @@ function VideoCard({
         animatedStyle,
         styles.card,
         horizontal && styles.horizontal,
+        horizontal && compact && styles.horizontalCompact,
         { backgroundColor: colors.card, borderColor: colors.border },
       ]}
     >
@@ -204,6 +208,9 @@ const styles = StyleSheet.create({
     width: 260,
     marginRight: spacing.md,
     marginBottom: 0,
+  },
+  horizontalCompact: {
+    width: 168,
   },
   thumbWrap: {
     position: 'relative',

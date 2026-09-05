@@ -1,11 +1,11 @@
 import { onAuthStateChanged, onIdTokenChanged, type User as FirebaseUser } from 'firebase/auth';
-import { fetchUserByFirebaseUid } from '../api/auth';
 import { setApiAuthToken } from '../api/client';
 import { fetchPlatformAccess } from '../api/parent';
 import { firebaseAuth } from '../config/firebase';
 import { useAppStore } from '../store/useAppStore';
 import type { BackendUser } from '../types/auth';
 import type { PlatformAccess } from '../api/parent';
+import { ensureBackendUser } from './authService';
 import { clearAuthMeta, loadAuthMeta, saveAuthMeta } from './authStorage';
 import { loadParentChildren, resetParentChildrenCache } from './parentChildrenCache';
 
@@ -34,10 +34,8 @@ export async function restoreSessionFromFirebaseUser(firebaseUser: FirebaseUser)
   const idToken = await firebaseUser.getIdToken();
   setApiAuthToken(idToken);
 
-  const [backendUser, platformAccess] = await Promise.all([
-    fetchUserByFirebaseUid(firebaseUser.uid),
-    fetchPlatformAccess().catch(() => null),
-  ]);
+  const backendUser = await ensureBackendUser(firebaseUser);
+  const platformAccess = await fetchPlatformAccess().catch(() => null);
 
   const resolvedAccess =
     platformAccess ?? (await buildPlatformAccess(backendUser));

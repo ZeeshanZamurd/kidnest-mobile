@@ -1,12 +1,13 @@
 import { fetchParentChildren, type ParentChild } from '../api/parent';
 import { CacheManager } from '../services/cache';
+import { loadPersistedActiveChildId } from '../services/activeChildStorage';
 import { useAppStore } from '../store/useAppStore';
 
 let inflight: Promise<ParentChild[]> | null = null;
 
 /** Fetch parent children once per session; dedupes concurrent calls. */
 export function loadParentChildren(force = false): Promise<ParentChild[]> {
-  const { apiChildren, apiChildrenLoaded, setApiChildren, setApiChildrenLoaded } =
+  const { apiChildren, apiChildrenLoaded, setApiChildren, setApiChildrenLoaded, setActiveChild } =
     useAppStore.getState();
 
   if (force) {
@@ -21,10 +22,13 @@ export function loadParentChildren(force = false): Promise<ParentChild[]> {
     return inflight;
   }
 
-  inflight = fetchParentChildren()
-    .then((children) => {
+  inflight = Promise.all([fetchParentChildren(), loadPersistedActiveChildId()])
+    .then(([children, persistedId]) => {
       setApiChildren(children);
       setApiChildrenLoaded(true);
+      if (persistedId && children.some((c) => c.id === persistedId)) {
+        setActiveChild(persistedId);
+      }
       return children;
     })
     .catch(() => {

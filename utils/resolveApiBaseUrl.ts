@@ -17,20 +17,18 @@ function buildFromHost(host: string): string {
   return `http://${host}:${API_PORT}/${API_PREFIX}`;
 }
 
-/** USB debugging: `adb reverse tcp:3010 tcp:3010` then device can use localhost for API. */
-function androidUsbReverseBaseUrl(): string | null {
-  if (Platform.OS !== 'android') return null;
-  return buildFromHost('localhost');
-}
-
 /**
  * Resolves API base URL:
  * 1. API_URL if set
  * 2. API_DOMAIN if set
- * 3. Metro dev server host (same machine as the JS bundle)
- * 4. Generated LAN IP from detect-host script
- * 5. Android USB localhost (requires adb reverse on port 3010)
- * 6. localhost (iOS simulator fallback)
+ * 3. Android USB: localhost via `adb reverse tcp:3010 tcp:3010` (most reliable)
+ * 4. Metro LAN host (same Wi‑Fi)
+ * 5. Generated LAN IP from detect-host script
+ * 6. Android emulator host loopback (10.0.2.2)
+ * 7. localhost (iOS simulator fallback)
+ *
+ * Prefer USB reverse over Metro LAN — office Wi‑Fi often blocks phone→Mac:3010
+ * even when Metro bundles load.
  */
 export function resolveApiBaseUrl(): string {
   const explicitUrl = API_URL.trim();
@@ -43,8 +41,22 @@ export function resolveApiBaseUrl(): string {
     return buildFromDomain(domain);
   }
 
+  // Physical Android / emulator with `adb reverse`: device localhost → host Nest
+  if (Platform.OS === 'android' && __DEV__) {
+    const usbUrl = buildFromHost('localhost');
+    if (__DEV__) {
+      console.log('[KidNest API] Using Android localhost (adb reverse):', usbUrl);
+    }
+    return usbUrl;
+  }
+
   const metroHost = getMetroDevHost();
-  if (metroHost) {
+  if (
+    metroHost &&
+    metroHost !== 'localhost' &&
+    metroHost !== '127.0.0.1' &&
+    metroHost !== '10.0.2.2'
+  ) {
     const url = buildFromHost(metroHost);
     if (__DEV__) {
       console.log('[KidNest API] Using Metro host:', url);
@@ -61,12 +73,12 @@ export function resolveApiBaseUrl(): string {
     return url;
   }
 
-  const usbUrl = androidUsbReverseBaseUrl();
-  if (usbUrl) {
+  if (Platform.OS === 'android') {
+    const emulatorUrl = buildFromHost('10.0.2.2');
     if (__DEV__) {
-      console.log('[KidNest API] Using Android localhost (adb reverse):', usbUrl);
+      console.log('[KidNest API] Using Android emulator host:', emulatorUrl);
     }
-    return usbUrl;
+    return emulatorUrl;
   }
 
   const fallback = buildFromHost('localhost');

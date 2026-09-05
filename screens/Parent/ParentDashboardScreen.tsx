@@ -18,6 +18,8 @@ import SectionHeader from '../../components/ui/SectionHeader';
 import StatCard from '../../components/analytics/StatCard';
 import VideoCard from '../../components/video/VideoCard';
 import ChildProfileCard from '../../components/profile/ChildProfileCard';
+import SelectedChildBar from '../../components/profile/SelectedChildBar';
+import ChildProfilePickerModal from '../../components/profile/ChildProfilePickerModal';
 import SkeletonLoader from '../../components/ui/SkeletonLoader';
 import { useTheme } from '../../context/ThemeContext';
 import { useAppStore } from '../../store/useAppStore';
@@ -25,6 +27,8 @@ import { browseVideos, formatDuration } from '../../api/browse';
 import { fetchParentDashboard } from '../../api/parent';
 import type { BrowseVideo } from '../../api/browse';
 import { useTabScreenPadding } from '../../hooks/useScreenPadding';
+import { loadChildProfileMetaMap } from '../../services/childProfileMetaStorage';
+import { avatarKeyForIndex, type AvatarKey } from '../../constants/avatars';
 import { radius, spacing, typography } from '../../theme/colors';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Video } from '../../types';
@@ -102,7 +106,7 @@ function QuickAction({ icon, label, color, onPress }: QuickActionProps) {
       <View style={[styles.quickActionIcon, { backgroundColor: color + '20' }]}>
         <Icon name={icon} size={20} color={color} />
       </View>
-      <Text style={[styles.quickActionLabel, { color: colors.text }]} numberOfLines={1}>
+      <Text style={[styles.quickActionLabel, { color: colors.text }]} numberOfLines={2}>
         {label}
       </Text>
     </Pressable>
@@ -150,18 +154,22 @@ export default function ParentDashboardScreen() {
   const navigation = useNavigation<Nav>();
   const parent = useAppStore((s) => s.parent);
   const apiChildren = useAppStore((s) => s.apiChildren);
+  const activeChildId = useAppStore((s) => s.activeChildId);
+  const setActiveChild = useAppStore((s) => s.setActiveChild);
   const parentSession = useAppStore((s) => s.parentSession);
   const platformAccess = useAppStore((s) => s.platformAccess);
   const scrollBottomPad = useTabScreenPadding(spacing.xl);
 
   const [recentVideos, setRecentVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
+  const [childPickerVisible, setChildPickerVisible] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     children: 0,
     assignments: 0,
     channels: 0,
     videosAvailable: 0,
   });
+  const [avatarByChildId, setAvatarByChildId] = useState<Record<string, AvatarKey>>({});
   const [displayName, setDisplayName] = useState(() =>
     resolveDisplayName(parentSession, parent.name ?? ''),
   );
@@ -169,6 +177,21 @@ export default function ParentDashboardScreen() {
   useEffect(() => {
     setDisplayName(resolveDisplayName(parentSession, parent.name ?? ''));
   }, [parentSession, parent.name]);
+
+  useEffect(() => {
+    if (!apiChildren.length) {
+      setAvatarByChildId({});
+      return;
+    }
+    void loadChildProfileMetaMap().then((map) => {
+      const next: Record<string, AvatarKey> = {};
+      apiChildren.forEach((c, index) => {
+        const stored = map[c.id]?.avatarKey;
+        next[c.id] = stored ?? avatarKeyForIndex(index);
+      });
+      setAvatarByChildId(next);
+    });
+  }, [apiChildren]);
 
   useEffect(() => {
     if (!parentSession?.idToken) {
@@ -202,7 +225,7 @@ export default function ParentDashboardScreen() {
         id: c.id,
         name: c.user.displayName,
         age: c.age,
-        avatar: '',
+        avatar: avatarByChildId[c.id] ?? 'lion',
         dailyLimitMinutes: 60,
         screenTimeMinutes: 0,
         isPaused: c.isPaused,
@@ -212,6 +235,51 @@ export default function ParentDashboardScreen() {
         assignmentCount: c._count?.assignments ?? 0,
       }))
     : [];
+
+  const planInfo = useMemo(() => {
+    const sub = platformAccess?.subscription;
+    const status = (sub?.status ?? platformAccess?.subscriptionStatus ?? '').toUpperCase();
+    const isActive =
+      Boolean(platformAccess?.hasFullVideoAccess) ||
+      status === 'ACTIVE' ||
+      status === 'TRIALING';
+    const isFree = platformAccess?.accessType === 'FREE' && !isActive;
+
+    if (isActive) {
+      const end = sub?.currentPeriodEnd
+        ? new Date(sub.currentPeriodEnd).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : null;
+      return {
+        title: sub?.planName?.trim() || 'KidNest Premium',
+        subtitle: end ? `Active · renews ${end}` : 'Active subscription · View billing',
+        badge: 'Premium',
+        icon: 'diamond' as const,
+        accent: true,
+      };
+    }
+
+    if (isFree) {
+      return {
+        title: 'Free plan',
+        subtitle: 'Free region access · Upgrade for more',
+        badge: 'Free',
+        icon: 'sparkles-outline' as const,
+        accent: false,
+      };
+    }
+
+    return {
+      title: 'KidNest Premium',
+      subtitle: 'Subscribe to unlock full access',
+      badge: 'Upgrade',
+      icon: 'diamond-outline' as const,
+      accent: false,
+    };
+  }, [platformAccess]);
 
   const isNewUser =
     !loading &&
@@ -307,6 +375,17 @@ export default function ParentDashboardScreen() {
           </LinearGradient>
         </Animated.View>
 
+        {apiChildren.length > 0 ? (
+          <View style={styles.childSwitchWrap}>
+            <SelectedChildBar
+              children={apiChildren}
+              activeChildId={activeChildId ?? apiChildren[0]?.id ?? null}
+              onSelectChild={setActiveChild}
+              onOpenPicker={() => setChildPickerVisible(true)}
+            />
+          </View>
+        ) : null}
+
         {/* Quick actions — above the fold */}
         <Animated.View entering={FadeInDown.duration(400).delay(40)} style={styles.quickActionsWrap}>
           <View style={styles.quickActions}>
@@ -330,28 +409,68 @@ export default function ParentDashboardScreen() {
             />
             <QuickAction
               icon="analytics"
-              label={t('child_analytics')}
+              label="Analytics"
               color={colors.success}
               onPress={() => navigation.navigate('Analytics')}
             />
           </View>
         </Animated.View>
 
-        {/* Subscription */}
+        {/* Subscription / plan */}
         <Animated.View entering={FadeInDown.duration(410).delay(50)} style={styles.section}>
           <Pressable
             onPress={() => navigation.navigate('Subscription')}
-            style={[styles.premiumBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[
+              styles.premiumBanner,
+              {
+                backgroundColor: planInfo.accent ? colors.primary + '10' : colors.card,
+                borderColor: planInfo.accent ? colors.primary + '44' : colors.border,
+              },
+            ]}
           >
-            <View style={[styles.premiumIcon, { backgroundColor: colors.primary + '14' }]}>
-              <Icon name="diamond-outline" size={22} color={colors.primary} />
+            <View
+              style={[
+                styles.premiumIcon,
+                {
+                  backgroundColor: planInfo.accent
+                    ? colors.primary + '22'
+                    : colors.primary + '14',
+                },
+              ]}
+            >
+              <Icon
+                name={planInfo.icon}
+                size={20}
+                color={colors.primary}
+              />
             </View>
             <View style={styles.premiumText}>
-              <Text style={[styles.premiumTitle, { color: colors.text }]}>KidNest Premium</Text>
-              <Text style={[styles.premiumDesc, { color: colors.textMuted }]}>
-                {platformAccess?.hasAccess
-                  ? 'View your plan and billing'
-                  : 'Subscribe to unlock full access'}
+              <View style={styles.premiumTitleRow}>
+                <Text style={[styles.premiumTitle, { color: colors.text }]} numberOfLines={1}>
+                  {planInfo.title}
+                </Text>
+                <View
+                  style={[
+                    styles.planBadge,
+                    {
+                      backgroundColor: planInfo.accent
+                        ? colors.primary
+                        : colors.border + 'AA',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.planBadgeText,
+                      { color: planInfo.accent ? '#fff' : colors.textSecondary },
+                    ]}
+                  >
+                    {planInfo.badge}
+                  </Text>
+                </View>
+              </View>
+              <Text style={[styles.premiumDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                {planInfo.subtitle}
               </Text>
             </View>
             <Icon name="chevron-forward" size={18} color={colors.textMuted} />
@@ -456,7 +575,7 @@ export default function ParentDashboardScreen() {
             </View>
             <View style={styles.libraryText}>
               <Text style={[styles.libraryTitle, { color: colors.text }]}>Manage assigned content</Text>
-              <Text style={[styles.libraryDesc, { color: colors.textMuted }]} numberOfLines={2}>
+              <Text style={[styles.libraryDesc, { color: colors.textSecondary }]} numberOfLines={2}>
                 Videos and channels you've added for your children
               </Text>
             </View>
@@ -473,16 +592,14 @@ export default function ParentDashboardScreen() {
               onAction={() => navigation.navigate('AddChild')}
             />
             {children.slice(0, 3).map((child) => (
-              <View key={child.id}>
+              <View key={child.id} style={styles.childCardWrap}>
                 <ChildProfileCard
                   child={child}
+                  compact
+                  avatarKey={avatarByChildId[child.id] ?? (child.avatar as AvatarKey)}
+                  assignmentCount={child.assignmentCount}
                   onPress={() => navigation.navigate('ChildProfileDetail', { childId: child.id })}
                 />
-                {child.assignmentCount > 0 && (
-                  <Text style={[styles.childMeta, { color: colors.textMuted }]}>
-                    {child.assignmentCount} video{child.assignmentCount === 1 ? '' : 's'} assigned
-                  </Text>
-                )}
               </View>
             ))}
           </Animated.View>
@@ -547,6 +664,7 @@ export default function ParentDashboardScreen() {
                 <VideoCard
                   video={item}
                   horizontal
+                  compact
                   onPress={() => navigation.navigate('VideoPlayer', { videoId: item.id })}
                 />
               )}
@@ -556,12 +674,28 @@ export default function ParentDashboardScreen() {
           )}
         </Animated.View>
       </ScrollView>
+      <ChildProfilePickerModal
+        visible={childPickerVisible}
+        children={apiChildren}
+        activeChildId={activeChildId}
+        selectOnly
+        onClose={() => setChildPickerVisible(false)}
+        onSelect={(id) => {
+          setActiveChild(id);
+          setChildPickerVisible(false);
+        }}
+      />
     </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: {},
+  childSwitchWrap: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
   section: { marginBottom: spacing.lg },
   hero: {
     marginHorizontal: spacing.md,
@@ -633,43 +767,63 @@ const styles = StyleSheet.create({
   quickAction: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   quickActionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   quickActionLabel: {
-    ...typography.tiny,
+    fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
+    lineHeight: 13,
   },
   premiumBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 12,
   },
   premiumIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  premiumText: { flex: 1 },
-  premiumTitle: { ...typography.bodyBold, marginBottom: 2 },
+  premiumText: { flex: 1, minWidth: 0, gap: 2 },
+  premiumTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  premiumTitle: { ...typography.bodyBold, flexShrink: 1 },
+  planBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  planBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   premiumDesc: { ...typography.caption, lineHeight: 17 },
+  childCardWrap: {
+    paddingHorizontal: spacing.md,
+  },
   setupCard: {
     marginHorizontal: spacing.md,
     padding: spacing.lg,
@@ -717,7 +871,7 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.md,
+    gap: 10,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xs,
   },
@@ -733,19 +887,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: spacing.md,
     marginBottom: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 12,
   },
   libraryIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  libraryText: { flex: 1 },
+  libraryText: { flex: 1, minWidth: 0 },
   libraryTitle: { ...typography.bodyBold, marginBottom: 2 },
   libraryDesc: { ...typography.caption, lineHeight: 17 },
   childMeta: {

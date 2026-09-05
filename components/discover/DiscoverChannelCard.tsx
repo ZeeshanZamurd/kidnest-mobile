@@ -97,11 +97,16 @@ function DiscoverChannelCard({
             style={styles.addBtnFull}
           />
         </View>
-      ) : premiumLocked ? (
-        <View style={[styles.addRow, styles.premiumRow, { borderTopColor: colors.border }]}>
+      ) : premiumLocked && onAdd ? (
+        <Pressable
+          onPress={onAdd}
+          style={[styles.addRow, styles.premiumRow, { borderTopColor: colors.border }]}
+        >
           <Icon name="diamond" size={15} color={colors.primary} />
-          <Text style={[styles.premiumRowText, { color: colors.primary }]}>Subscribe to browse & add</Text>
-        </View>
+          <Text style={[styles.premiumRowText, { color: colors.primary }]}>
+            Subscribe to add
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -163,12 +168,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.md,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
   },
   statText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   desc: {
     ...typography.caption,

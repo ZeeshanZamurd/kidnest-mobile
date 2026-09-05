@@ -9,6 +9,10 @@ import {
 } from '../data/mockData';
 import { persistCurrentAuthMeta } from '../services/authBootstrap';
 import { clearAuthMeta } from '../services/authStorage';
+import {
+  clearPersistedActiveChildId,
+  persistActiveChildId,
+} from '../services/activeChildStorage';
 import type { BackendUser } from '../types/auth';
 import type { AppNotification, ChildProfile, UserRole, Video } from '../types';
 
@@ -86,7 +90,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     void persistCurrentAuthMeta();
   },
   setRole: (role) => set({ role }),
-  setActiveChild: (childId) => set({ activeChildId: childId }),
+  setActiveChild: (childId) => {
+    set({ activeChildId: childId });
+    void persistActiveChildId(childId);
+  },
 
   setChildFavoriteIds: (videoIds, channelIds) =>
     set({ childFavoriteVideoIds: videoIds, childFavoriteChannelIds: channelIds }),
@@ -161,12 +168,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setPlatformAccess: (access) => set({ platformAccess: access }),
   dismissSubscriptionPrompt: () => set({ subscriptionPromptDismissed: true }),
-  setApiChildren: (children) =>
+  setApiChildren: (children) => {
+    const current = get().activeChildId;
+    const stillValid = Boolean(current && children.some((c) => c.id === current));
+    const nextId = stillValid ? current : children[0]?.id ?? null;
     set({
       apiChildren: children,
       apiChildrenLoaded: true,
-      activeChildId: get().activeChildId ?? children[0]?.id ?? null,
-    }),
+      activeChildId: nextId,
+    });
+    if (nextId) void persistActiveChildId(nextId);
+  },
   setApiChildrenLoaded: (loaded) => set({ apiChildrenLoaded: loaded }),
 
   login: (role, childId) => {
@@ -175,6 +187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       role,
       activeChildId: childId ?? get().activeChildId,
     });
+    if (childId) void persistActiveChildId(childId);
   },
 
   exitProfileMode: () => {
@@ -185,6 +198,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       isAuthenticated: false,
       role: null,
+      activeChildId: null,
       parentSession: null,
       platformAccess: null,
       subscriptionPromptDismissed: false,
@@ -194,6 +208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       childFavoriteChannelIds: [],
     });
     void clearAuthMeta();
+    void clearPersistedActiveChildId();
   },
 }));
 

@@ -3,8 +3,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext';
-import { radius, spacing } from '../../theme/colors';
+import { radius } from '../../theme/colors';
 import DiscoverFilterSheet, { type FilterItem } from './DiscoverFilterSheet';
+import { DISCOVER_FILTER_GAP } from './discoverLayout';
 
 type NamedItem = { id: string; name: string };
 
@@ -38,21 +39,19 @@ function languageIcon(name: string): string {
   return 'globe-outline';
 }
 
-type PickerProps = {
-  icon: string;
-  title: string;
+type FilterBtnProps = {
+  label: string;
   value: string;
   active: boolean;
   onPress: () => void;
 };
 
-const FilterPicker = memo(function FilterPicker({
-  icon,
-  title,
+const FilterButton = memo(function FilterButton({
+  label,
   value,
   active,
   onPress,
-}: PickerProps) {
+}: FilterBtnProps) {
   const { colors } = useTheme();
 
   return (
@@ -60,32 +59,40 @@ const FilterPicker = memo(function FilterPicker({
       onPress={onPress}
       accessibilityRole="button"
       style={[
-        styles.picker,
-        active
-          ? { backgroundColor: colors.primary, borderColor: colors.primary }
-          : { backgroundColor: colors.surface, borderColor: colors.border },
+        styles.btn,
+        {
+          backgroundColor: active ? colors.primary + '14' : colors.surface,
+          borderColor: active ? colors.primary + '66' : colors.border,
+        },
       ]}
     >
-      <Icon name={icon} size={16} color={active ? '#fff' : colors.textMuted} />
-      <View style={styles.pickerText}>
+      <View style={styles.btnText}>
         <Text
-          style={[styles.pickerTitle, { color: active ? 'rgba(255,255,255,0.85)' : colors.textMuted }]}
+          style={[styles.btnLabel, { color: colors.textMuted }]}
           numberOfLines={1}
         >
-          {title}
+          {label}
         </Text>
         <Text
-          style={[styles.pickerValue, { color: active ? '#fff' : colors.text }]}
+          style={[styles.btnValue, { color: active ? colors.primary : colors.text }]}
           numberOfLines={1}
         >
           {value}
         </Text>
       </View>
-      <Icon name="chevron-down" size={16} color={active ? '#fff' : colors.textMuted} />
+      <Icon
+        name="chevron-down"
+        size={14}
+        color={active ? colors.primary : colors.textMuted}
+      />
     </Pressable>
   );
 });
 
+/**
+ * Equal secondary filter controls on one grid row.
+ * Sheets / selection behavior unchanged.
+ */
 export default function DiscoverCompactFilters({
   categories,
   languages,
@@ -95,10 +102,12 @@ export default function DiscoverCompactFilters({
   onLanguageChange,
 }: Props) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
   const [sheet, setSheet] = useState<SheetKind>(null);
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
   const selectedLanguage = languages.find((l) => l.id === selectedLanguageId);
+  const hasFilters = !!selectedCategoryId || !!selectedLanguageId;
 
   const categorySheetItems: FilterItem[] = useMemo(
     () => [
@@ -125,21 +134,37 @@ export default function DiscoverCompactFilters({
   );
 
   return (
-    <View style={styles.strip}>
-      <FilterPicker
-        icon="grid-outline"
-        title={t('filter_category')}
-        value={selectedCategory?.name ?? t('filter_all')}
-        active={!!selectedCategoryId}
-        onPress={() => setSheet('category')}
-      />
-      <FilterPicker
-        icon="language-outline"
-        title={t('filter_language')}
-        value={selectedLanguage?.name ?? t('filter_all')}
-        active={!!selectedLanguageId}
-        onPress={() => setSheet('language')}
-      />
+    <View style={styles.wrap}>
+      <View style={styles.row}>
+        <FilterButton
+          label={t('filter_category')}
+          value={selectedCategory?.name ?? t('filter_all')}
+          active={!!selectedCategoryId}
+          onPress={() => setSheet('category')}
+        />
+        <FilterButton
+          label={t('filter_language')}
+          value={selectedLanguage?.name ?? t('filter_all')}
+          active={!!selectedLanguageId}
+          onPress={() => setSheet('language')}
+        />
+      </View>
+
+      {hasFilters ? (
+        <Pressable
+          onPress={() => {
+            onCategoryChange(null);
+            onLanguageChange(null);
+          }}
+          hitSlop={6}
+          accessibilityRole="button"
+          style={styles.clearRow}
+        >
+          <Text style={[styles.clearText, { color: colors.textMuted }]}>
+            {t('filter_clear')}
+          </Text>
+        </Pressable>
+      ) : null}
 
       <DiscoverFilterSheet
         visible={sheet === 'category'}
@@ -164,34 +189,50 @@ export default function DiscoverCompactFilters({
 }
 
 const styles = StyleSheet.create({
-  strip: {
-    flexDirection: 'row',
-    gap: 10,
+  wrap: {
+    width: '100%',
+    gap: 8,
   },
-  picker: {
+  row: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: DISCOVER_FILTER_GAP,
+    width: '100%',
+  },
+  btn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     minHeight: 44,
-    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-  },
-  pickerText: {
-    flex: 1,
+    paddingLeft: 12,
+    paddingRight: 10,
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
     minWidth: 0,
   },
-  pickerTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    marginBottom: 1,
+  btnText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
-  pickerValue: {
-    fontSize: 14,
-    fontWeight: '700',
+  btnLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  btnValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  clearRow: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
+  },
+  clearText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

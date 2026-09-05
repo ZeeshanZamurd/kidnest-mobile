@@ -9,7 +9,7 @@ export type AssignButtonState = 'idle' | 'loading' | 'success' | 'assigned';
 type Props = {
   state: AssignButtonState;
   onPress: () => void;
-  variant?: 'compact' | 'full' | 'inline';
+  variant?: 'compact' | 'full' | 'inline' | 'shelf';
   label?: string;
   assignedLabel?: string;
   style?: ViewStyle;
@@ -30,6 +30,37 @@ export default function AssignActionButton({
   const isLoading = state === 'loading';
   const disabled = isLoading;
   const accent = isAssigned ? SUCCESS_GREEN : colors.primary;
+
+  if (variant === 'shelf') {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={isAssigned ? assignedLabel : label}
+        style={[styles.shelfWrap, style]}
+      >
+        <View
+          style={[
+            styles.shelfBtn,
+            {
+              backgroundColor: isAssigned ? SUCCESS_GREEN : 'rgba(255,255,255,0.94)',
+              borderColor: isAssigned ? SUCCESS_GREEN : 'rgba(0,0,0,0.06)',
+            },
+          ]}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : isAssigned ? (
+            <Icon name="checkmark" size={15} color="#fff" />
+          ) : (
+            <Icon name="add" size={18} color={colors.primary} />
+          )}
+        </View>
+      </Pressable>
+    );
+  }
 
   if (variant === 'inline') {
     return (
@@ -58,7 +89,15 @@ export default function AssignActionButton({
         hitSlop={8}
         style={[styles.compactWrap, style]}
       >
-        <View style={[styles.compact, isAssigned && styles.compactAssigned]}>
+        <View
+          style={[
+            styles.compact,
+            {
+              borderColor: isAssigned ? SUCCESS_GREEN : colors.primary + '70',
+              backgroundColor: isAssigned ? SUCCESS_GREEN + '18' : colors.primary + '10',
+            },
+          ]}
+        >
           {isLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : isAssigned ? (
@@ -132,11 +171,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   compact: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
   },
   compactAssigned: {
     backgroundColor: SUCCESS_GREEN + '18',
@@ -146,5 +186,24 @@ const styles = StyleSheet.create({
     height: 30,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  shelfWrap: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shelfBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 2,
+    elevation: 3,
   },
 });
