@@ -11,8 +11,9 @@ import {
 import { BlurView } from '@react-native-community/blur';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
-import { BRAND_ACCENT, BRAND_PRIMARY } from '../../constants/branding';
+import { BRAND_PRIMARY } from '../../constants/branding';
 import { spacing, typography } from '../../theme/colors';
+import { useTheme } from '../../context/ThemeContext';
 import CachedImage from '../ui/CachedImage';
 import AnimatedPressable from './player/AnimatedPressable';
 import VideoCard from './VideoCard';
@@ -55,12 +56,13 @@ type Props = {
 };
 
 function GlassTitleCard({ title, channelName }: { title: string; channelName: string }) {
+  const { colors, isDark } = useTheme();
   const inner = (
     <View style={styles.glassInner}>
-      <Text style={styles.glassTitle} numberOfLines={2}>
+      <Text style={[styles.glassTitle, { color: colors.text }]} numberOfLines={2}>
         {title}
       </Text>
-      <Text style={styles.glassChannel} numberOfLines={1}>
+      <Text style={[styles.glassChannel, { color: colors.textSecondary }]} numberOfLines={1}>
         {channelName}
       </Text>
       <Text style={styles.decorStar} accessibilityElementsHidden>
@@ -72,13 +74,15 @@ function GlassTitleCard({ title, channelName }: { title: string; channelName: st
   if (Platform.OS === 'ios') {
     return (
       <View style={styles.glassWrap}>
-        <BlurView blurType="light" blurAmount={18} style={StyleSheet.absoluteFill} />
-        <View style={styles.glassFallback}>{inner}</View>
+        <BlurView blurType={isDark ? 'dark' : 'light'} blurAmount={18} style={StyleSheet.absoluteFill} />
+        <View style={[styles.glassFallback, { backgroundColor: colors.surfaceGlass }]}>{inner}</View>
       </View>
     );
   }
 
-  return <View style={[styles.glassWrap, styles.glassAndroid]}>{inner}</View>;
+  return (
+    <View style={[styles.glassWrap, { backgroundColor: colors.surfaceGlass }]}>{inner}</View>
+  );
 }
 
 function ChannelAvatar({
@@ -127,10 +131,15 @@ function ActionChip({
   accent: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <AnimatedPressable
       style={[
         styles.actionChip,
+        {
+          backgroundColor: colors.background,
+          borderColor: colors.border,
+        },
         active && { backgroundColor: `${accent}18`, borderColor: `${accent}55` },
       ]}
       onPress={onPress}
@@ -138,8 +147,11 @@ function ActionChip({
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
     >
-      <Icon name={icon} size={15} color={active ? accent : '#8B7AA8'} />
-      <Text style={[styles.actionChipLabel, active && { color: accent }]} numberOfLines={1}>
+      <Icon name={icon} size={15} color={active ? accent : colors.textMuted} />
+      <Text
+        style={[styles.actionChipLabel, { color: colors.textSecondary }, active && { color: accent }]}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </AnimatedPressable>
@@ -157,6 +169,7 @@ function VisitChannelCard({
   visitLabel: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <AnimatedPressable
       style={styles.visitRow}
@@ -166,14 +179,14 @@ function VisitChannelCard({
     >
       <ChannelAvatar name={channelName} thumbnailUrl={channelThumbnailUrl} size={34} />
       <View style={styles.visitCopy}>
-        <Text style={styles.visitChannelName} numberOfLines={1}>
+        <Text style={[styles.visitChannelName, { color: colors.text }]} numberOfLines={1}>
           {channelName}
         </Text>
-        <Text style={styles.visitHint} numberOfLines={1}>
+        <Text style={[styles.visitHint, { color: colors.primary }]} numberOfLines={1}>
           {visitLabel}
         </Text>
       </View>
-      <Icon name="chevron-forward" size={16} color={BRAND_PRIMARY} />
+      <Icon name="chevron-forward" size={16} color={colors.primary} />
     </AnimatedPressable>
   );
 }
@@ -198,19 +211,26 @@ export default function VideoDetailPanel({
   onVideo,
   onFavoriteVideo,
 }: Props) {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.panel}>
       <GlassTitleCard title={title} channelName={channelName} />
 
       {showActions || channelNavigable ? (
-        <View style={styles.actionsCard}>
+        <View
+          style={[
+            styles.actionsCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           {showActions ? (
             <View style={styles.chipRow}>
               <ActionChip
                 icon={isFavorite ? 'heart' : 'heart-outline'}
                 label={labels.favorites}
                 active={isFavorite}
-                accent={BRAND_ACCENT}
+                accent={colors.accent}
                 onPress={onToggleFavorite}
               />
               {hasChannel ? (
@@ -227,7 +247,9 @@ export default function VideoDetailPanel({
 
           {channelNavigable ? (
             <>
-              {showActions ? <View style={styles.actionsDivider} /> : null}
+              {showActions ? (
+                <View style={[styles.actionsDivider, { backgroundColor: colors.border }]} />
+              ) : null}
               <VisitChannelCard
                 channelName={channelName}
                 channelThumbnailUrl={channelThumbnailUrl}
@@ -242,16 +264,16 @@ export default function VideoDetailPanel({
       {showUpNext && nextVideo ? (
         <Pressable onPress={onUpNext} accessibilityRole="button">
           <LinearGradient
-            colors={[BRAND_PRIMARY, '#9B6BFF', BRAND_PRIMARY]}
+            colors={[colors.primary, BRAND_PRIMARY, colors.primary]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.upNextBorder}
           >
-            <View style={styles.upNextInner}>
+            <View style={[styles.upNextInner, { backgroundColor: colors.surface }]}>
               <Image source={{ uri: nextVideo.thumbnail }} style={styles.upNextThumb} />
               <View style={styles.upNextText}>
-                <Text style={styles.upNextLabel}>{labels.upNext}</Text>
-                <Text style={styles.upNextTitle} numberOfLines={1}>
+                <Text style={[styles.upNextLabel, { color: colors.primary }]}>{labels.upNext}</Text>
+                <Text style={[styles.upNextTitle, { color: colors.text }]} numberOfLines={1}>
                   {nextVideo.title}
                 </Text>
               </View>
@@ -265,7 +287,7 @@ export default function VideoDetailPanel({
 
       {suggestedVideos.length > 0 ? (
         <View style={styles.suggested}>
-          <Text style={styles.sectionTitle}>{labels.suggested}</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{labels.suggested}</Text>
           <FlatList
             horizontal
             data={suggestedVideos}

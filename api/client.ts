@@ -24,7 +24,7 @@ let authToken: string | null = null;
 const inflightGet = new Map<string, Promise<unknown>>();
 
 /** Avoid infinite spinners when the phone cannot reach the API host. */
-const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
 export function getInflightRequestCount(): number {
   return inflightGet.size;
@@ -191,9 +191,13 @@ async function executeRequest<T>(
         error,
       });
     }
+    const isProdApi = /api\.kido-nest\.fun/i.test(requestUrl);
+    const tip = isProdApi
+      ? 'Tip: check phone internet, open https://api.kido-nest.fun/docs in the browser, then retry.'
+      : 'Tip: run `adb reverse tcp:3010 tcp:3010` and keep Nest on :3010.';
     throw toApiError(
       error,
-      `Network request failed\nURL: ${requestUrl}\nCause: ${detail}\nTip: run \`adb reverse tcp:3010 tcp:3010\` and keep Nest on :3010.`,
+      `Network request failed\nURL: ${requestUrl}\nCause: ${detail}\n${tip}`,
     );
   } finally {
     clearTimeout(timeoutId);

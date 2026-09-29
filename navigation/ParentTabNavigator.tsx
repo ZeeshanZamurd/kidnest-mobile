@@ -6,11 +6,13 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import ParentDashboardScreen from '../screens/Parent/ParentDashboardScreen';
 import ContentDiscoveryScreen from '../screens/Parent/ContentDiscoveryScreen';
+import ParentMoviesScreen from '../screens/Parent/ParentMoviesScreen';
 import ChildProfilesScreen from '../screens/Parent/ChildProfilesScreen';
 import SettingsScreen from '../screens/Shared/SettingsScreen';
 import { useTheme } from '../context/ThemeContext';
 import { useParentBootstrap } from '../hooks/useParentBootstrap';
 import { useParentTabBarStyle } from './tabBarOptions';
+import { useAppStore } from '../store/useAppStore';
 import type { ParentTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<ParentTabParamList>();
@@ -36,6 +38,7 @@ export default function ParentTabNavigator() {
   const { colors } = useTheme();
   useParentBootstrap();
   const tabBarStyle = useParentTabBarStyle(colors);
+  const moviesEnabled = useAppStore((s) => s.platformAccess?.moviesSectionEnabled === true);
 
   return (
     <Tab.Navigator
@@ -64,6 +67,17 @@ export default function ParentTabNavigator() {
           tabBarLabel: 'Discover',
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="compass" focused={focused} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Movies"
+        component={ParentMoviesScreen}
+        options={{
+          tabBarLabel: 'Movies',
+          tabBarButton: moviesEnabled ? undefined : () => null,
+          tabBarIcon: ({ focused, color }) => (
+            <TabIcon name="film" focused={focused} color={color} />
           ),
         }}
       />

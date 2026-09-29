@@ -2,7 +2,7 @@
 export const playerTheme = {
   radius: 0,
   radiusImmersive: 0,
-  controlsHideMs: 4500,
+  controlsHideMs: 3500,
   dockHeight: 96,
   shelfHeight: 112,
   miniBarHeight: 4,

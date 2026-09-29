@@ -22,6 +22,8 @@ export type PlatformAccess = {
   freeUnlimitedBrowse?: boolean;
   /** When true, free users may assign any number of free channels. */
   freeUnlimitedChannels?: boolean;
+  /** When true, parent app shows Movies (TMDB trailers) tab. */
+  moviesSectionEnabled?: boolean;
   subscription: {
     status: string;
     planName: string;

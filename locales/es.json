@@ -200,6 +200,8 @@
   "badges": "Insignias",
   "safe_mode": "Modo seguro activo",
   "learning_fun": "¡Aprender es divertido!",
+  "child_hi_name": "¡Hola, {{name}}!",
+  "switch_profile": "Cambiar perfil",
   "onboarding_1_title": "Seguridad controlada",
   "onboarding_1_desc": "Apruebas cada canal y video. Los niños solo ven lo permitido.",
   "onboarding_2_title": "Sin anuncios",

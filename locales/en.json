@@ -214,6 +214,8 @@
   "badges": "Badges",
   "safe_mode": "Safe Mode On",
   "learning_fun": "Learning is fun!",
+  "child_hi_name": "Hi, {{name}}!",
+  "switch_profile": "Switch profile",
   "onboarding_1_title": "Parent-Controlled Safety",
   "onboarding_1_desc": "You approve every channel and video. Kids only see what you allow.",
   "onboarding_2_title": "Smooth, Ad-Free Experience",

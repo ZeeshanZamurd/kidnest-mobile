@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import CachedImage from '../../ui/CachedImage';
+import { useTheme } from '../../../context/ThemeContext';
 import type { Video } from '../../../types';
 
 const INLINE_TILE_W = 160;
@@ -25,6 +26,7 @@ export default function PlayerVideoShelf({
   onSelectVideo,
   variant = 'overlay',
 }: Props) {
+  const { colors } = useTheme();
   if (videos.length === 0) return null;
 
   const isInline = variant === 'inline';
@@ -41,12 +43,23 @@ export default function PlayerVideoShelf({
         />
       ) : null}
 
-      <View style={[styles.panel, isInline ? styles.panelInline : styles.panelOverlay]}>
+      <View
+        style={[
+          styles.panel,
+          isInline ? styles.panelInline : styles.panelOverlay,
+          isInline && {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
         {isInline ? (
           <View style={styles.headerRow}>
-            <Text style={[styles.heading, styles.headingInline]}>{title}</Text>
-            <View style={styles.countPill}>
-              <Text style={styles.countText}>{videos.length}</Text>
+            <Text style={[styles.heading, styles.headingInline, { color: colors.text }]}>
+              {title}
+            </Text>
+            <View style={[styles.countPill, { backgroundColor: colors.primary + '22' }]}>
+              <Text style={[styles.countText, { color: colors.primary }]}>{videos.length}</Text>
             </View>
           </View>
         ) : null}
@@ -71,7 +84,7 @@ export default function PlayerVideoShelf({
                   style={[
                     styles.thumbWrap,
                     { width: tileW, height: thumbH },
-                    isInline && styles.thumbWrapInline,
+                    isInline && [styles.thumbWrapInline, { backgroundColor: colors.border }],
                     active && (isInline ? styles.thumbWrapActiveInline : styles.thumbWrapActive),
                   ]}
                 >
@@ -90,7 +103,7 @@ export default function PlayerVideoShelf({
                   </View>
                 </View>
                 {isInline ? (
-                  <Text style={styles.titleInline} numberOfLines={2}>
+                  <Text style={[styles.titleInline, { color: colors.text }]} numberOfLines={2}>
                     {item.title}
                   </Text>
                 ) : null}
@@ -130,7 +143,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   panelInline: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderTopWidth: 0,
     paddingTop: 12,
@@ -140,8 +152,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(123,77,255,0.12)',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   headerRow: {
     flexDirection: 'row',

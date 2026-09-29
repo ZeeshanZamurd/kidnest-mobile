@@ -189,15 +189,12 @@ function FeedItem({
             setIsBuffering(false);
           }}
           onBuffer={(e) => {
-            if (currentTime <= 0.25) {
-              setIsBuffering(e.isBuffering);
-            }
+            setIsBuffering(e.isBuffering);
           }}
           onProgress={(e) => {
             setCurrentTime(e.currentTime);
             if (markPlaybackStarted(e.currentTime)) {
               setHasDisplayedFrame(true);
-              setIsBuffering(false);
             }
           }}
         />

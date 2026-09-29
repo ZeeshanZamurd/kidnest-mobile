@@ -16,6 +16,9 @@ const ThemeContext = createContext<ThemeContextValue>({
   toggleTheme: () => {},
 });
 
+/**
+ * App-wide light/dark theme. Stored once on device — applies to parent + every child profile.
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [isDark, setIsDark] = useState(false);
 

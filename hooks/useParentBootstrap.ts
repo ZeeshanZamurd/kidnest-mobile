@@ -28,6 +28,7 @@ export function useParentBootstrap() {
           hasFullVideoAccess: false,
           freeMaxAssignments: 10,
           freeVideoBrowseLimit: isFree ? null : 10,
+          moviesSectionEnabled: false,
           subscription: null,
         });
       });

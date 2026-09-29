@@ -1,11 +1,18 @@
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useTheme } from '../../context/ThemeContext';
-import { radius, spacing, typography } from '../../theme/colors';
+import { spacing } from '../../theme/colors';
 import type { ChildChannel } from '../../utils/channelMapper';
 import CachedImage from '../ui/CachedImage';
+import { childTapHaptic } from '../../utils/childHaptics';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type Props = {
   channel: ChildChannel;
@@ -15,6 +22,7 @@ type Props = {
   isFavorite?: boolean;
 };
 
+/** Compact channel rail — clean circle, light ring. */
 function ChildChannelCard({
   channel,
   onPress,
@@ -23,41 +31,89 @@ function ChildChannelCard({
   isFavorite = false,
 }: Props) {
   const { colors } = useTheme();
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   if (compact) {
     return (
-      <Pressable
-        onPress={onPress}
-        style={[styles.compact, { backgroundColor: colors.card, borderColor: colors.border }]}
+      <AnimatedPressable
+        onPress={() => {
+          childTapHaptic('tap');
+          onPress();
+        }}
+        onPressIn={() => {
+          scale.value = withSpring(0.95, { damping: 16, stiffness: 300 });
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, { damping: 14, stiffness: 260 });
+        }}
+        style={[styles.rail, animatedStyle]}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${channel.name} channel`}
       >
-        <CachedImage uri={channel.thumbnail} style={styles.compactAvatar} />
-        <Text style={[styles.compactName, { color: colors.text }]} numberOfLines={2}>
-          {channel.name}
-        </Text>
+        <View style={[styles.railRing, { borderColor: colors.primary + '35' }]}>
+          {channel.thumbnail ? (
+            <CachedImage uri={channel.thumbnail} style={styles.railAvatar} />
+          ) : (
+            <View style={[styles.railAvatar, styles.railFallback, { backgroundColor: colors.primary + '18' }]}>
+              <Text style={[styles.railFallbackText, { color: colors.primary }]}>
+                {channel.name.trim().charAt(0).toUpperCase() || '?'}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.railNameSlot}>
+          <Text style={[styles.railName, { color: colors.text }]} numberOfLines={2}>
+            {channel.name}
+          </Text>
+        </View>
         {onFavorite ? (
-          <Pressable style={styles.compactHeart} onPress={onFavorite} hitSlop={8}>
+          <Pressable
+            style={styles.railHeart}
+            onPress={() => {
+              childTapHaptic('select');
+              onFavorite();
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFavorite ? `Unfavorite ${channel.name}` : `Favorite ${channel.name}`
+            }
+          >
             <Icon
               name={isFavorite ? 'heart' : 'heart-outline'}
-              size={18}
+              size={16}
               color={isFavorite ? colors.accent : colors.textMuted}
             />
           </Pressable>
         ) : null}
-      </Pressable>
+      </AnimatedPressable>
     );
   }
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+    <AnimatedPressable
+      onPress={() => {
+        childTapHaptic('tap');
+        onPress();
+      }}
+      onPressIn={() => {
+        scale.value = withSpring(0.97);
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1);
+      }}
+      style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border },
+        animatedStyle,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={channel.name}
     >
-      <LinearGradient
-        colors={[colors.childPrimary + '22', colors.accent + '12']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
-      >
+      <View style={styles.row}>
         <CachedImage uri={channel.thumbnail} style={styles.avatar} />
         <View style={styles.info}>
           <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
@@ -70,77 +126,107 @@ function ChildChannelCard({
           ) : null}
         </View>
         {onFavorite ? (
-          <Pressable style={styles.heartBtn} onPress={onFavorite} hitSlop={8}>
+          <Pressable
+            style={styles.heartBtn}
+            onPress={() => {
+              childTapHaptic('select');
+              onFavorite();
+            }}
+            hitSlop={8}
+          >
             <Icon
               name={isFavorite ? 'heart' : 'heart-outline'}
-              size={22}
+              size={20}
               color={isFavorite ? colors.accent : colors.textMuted}
             />
           </Pressable>
         ) : (
-          <Icon name="chevron-forward" size={20} color={colors.textMuted} />
+          <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         )}
-      </LinearGradient>
-    </Pressable>
+      </View>
+    </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    marginBottom: spacing.sm,
+  rail: {
+    width: 84,
+    marginRight: 12,
+    alignItems: 'center',
+  },
+  railRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    padding: 2,
     overflow: 'hidden',
   },
-  gradient: {
+  railAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  railFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  railFallbackText: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  railNameSlot: {
+    marginTop: 8,
+    minHeight: 30,
+    width: '100%',
+    justifyContent: 'flex-start',
+  },
+  railName: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  railHeart: {
+    marginTop: 2,
+    padding: 4,
+  },
+  card: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
+    padding: 12,
+    gap: 12,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.lg,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(0,0,0,0.06)',
   },
   info: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   name: {
-    ...typography.bodyBold,
-    fontSize: 16,
+    fontSize: 15,
+    fontWeight: '700',
   },
   category: {
-    ...typography.caption,
-  },
-  compact: {
-    width: 108,
-    marginRight: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.sm,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  compactAvatar: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.lg,
-    backgroundColor: 'rgba(0,0,0,0.06)',
-  },
-  compactName: {
-    ...typography.caption,
-    fontWeight: '700',
-    textAlign: 'center',
-    minHeight: 34,
-  },
-  compactHeart: {
-    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
   },
   heartBtn: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

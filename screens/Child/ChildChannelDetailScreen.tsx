@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -42,6 +43,15 @@ import {
 type Route = RouteProp<RootStackParamList, 'ChildChannelDetail'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const PAGE_SIZE = 24;
+
+function mergeVideos(prev: BrowseVideo[], next: BrowseVideo[]): BrowseVideo[] {
+  if (prev.length === 0) return next;
+  const seen = new Set(prev.map((v) => v.id));
+  const appended = next.filter((v) => !seen.has(v.id));
+  return appended.length === 0 ? prev : [...prev, ...appended];
+}
+
 export default function ChildChannelDetailScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -57,9 +67,13 @@ export default function ChildChannelDetailScreen() {
   const [channel, setChannel] = useState<ChannelDetail | null>(null);
   const [items, setItems] = useState<BrowseVideo[]>([]);
   const [filter, setFilter] = useState<MediaFilter>('ALL');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMedia, setLoadingMedia] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const loadingMoreLock = useRef(false);
 
   useEffect(() => {
     setLoading(true);
@@ -69,29 +83,68 @@ export default function ChildChannelDetailScreen() {
       .finally(() => setLoading(false));
   }, [channelId]);
 
-  const loadMedia = useCallback(async () => {
-    if (items.length === 0) setLoadingMedia(true);
+  const loadMedia = useCallback(async (pageNum: number, append: boolean) => {
+    if (append) {
+      if (loadingMoreLock.current) return;
+      loadingMoreLock.current = true;
+      setLoadingMore(true);
+    } else {
+      setLoadingMedia(true);
+    }
     setError('');
     try {
       const contentType =
         filter === 'ALL' ? undefined : (filter as 'VIDEO' | 'SHORT');
-      const res = await browseVideos({ channelId, contentType, limit: 50 });
-      setItems(res.data);
-      prefetchBrowseThumbnails(res.data, 0, 12);
+      const res = await browseVideos({
+        channelId,
+        contentType,
+        page: pageNum,
+        limit: PAGE_SIZE,
+      });
+      setItems((prev) => {
+        const next = append ? mergeVideos(prev, res.data) : res.data;
+        prefetchBrowseThumbnails(
+          next,
+          append ? prev.length : 0,
+          append ? res.data.length + 4 : 12,
+        );
+        return next;
+      });
+      setPage(pageNum);
+      setHasMore(pageNum < res.meta.totalPages && res.data.length > 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load content');
     } finally {
       setLoadingMedia(false);
+      setLoadingMore(false);
+      loadingMoreLock.current = false;
     }
-  }, [channelId, filter, items.length]);
+  }, [channelId, filter]);
 
   useEffect(() => {
     if (!channel) return;
-    void loadMedia();
+    setItems([]);
+    setPage(1);
+    setHasMore(true);
+    void loadMedia(1, false);
   }, [channel, loadMedia]);
 
+  const loadMore = useCallback(() => {
+    if (loadingMedia || loadingMore || !hasMore || items.length === 0) return;
+    void loadMedia(page + 1, true);
+  }, [hasMore, items.length, loadMedia, loadingMedia, loadingMore, page]);
+
   const openVideo = (item: BrowseVideo) => {
-    openChildVideo(navigation, { id: item.id, contentType: item.contentType }, { channelId });
+    openChildVideo(
+      navigation,
+      {
+        id: item.id,
+        contentType: item.contentType,
+        title: item.title,
+        thumbnailUrl: item.thumbnailUrl,
+      },
+      { channelId },
+    );
   };
 
   const showGrid =
@@ -103,6 +156,14 @@ export default function ChildChannelDetailScreen() {
       if (idx != null) prefetchBrowseThumbnails(items, idx + 1, 8);
     },
     [items],
+  );
+
+  const listFooter = useMemo(
+    () =>
+      loadingMore ? (
+        <ActivityIndicator color={colors.primary} style={styles.loadMore} />
+      ) : null,
+    [colors.primary, loadingMore],
   );
 
   if (loading) {
@@ -191,6 +252,7 @@ export default function ChildChannelDetailScreen() {
         numColumns={showGrid ? 2 : 1}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeader}
+        ListFooterComponent={listFooter}
         contentContainerStyle={[styles.list, { paddingBottom: listBottomPad }]}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
@@ -202,13 +264,15 @@ export default function ChildChannelDetailScreen() {
         )}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 40 }}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.45}
         ListEmptyComponent={
           loadingMedia ? null : error ? (
             <ChildLoadError
               title={t('child_load_error')}
               description={error}
               retryLabel={t('try_again')}
-              onRetry={() => void loadMedia()}
+              onRetry={() => void loadMedia(1, false)}
             />
           ) : (
             <EmptyState
@@ -282,6 +346,9 @@ const styles = StyleSheet.create({
   mediaLoader: {
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
+  },
+  loadMore: {
+    marginVertical: spacing.md,
   },
   list: {
     paddingHorizontal: spacing.md,

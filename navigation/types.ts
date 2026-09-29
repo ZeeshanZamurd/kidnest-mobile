@@ -7,7 +7,7 @@ export type RootStackParamList = {
   ProfileSelection: undefined;
   ParentTabs: NavigatorScreenParams<ParentTabParamList> | undefined;
   ChildTabs: NavigatorScreenParams<ChildTabParamList> | undefined;
-  VideoPlayer: { videoId: string };
+  VideoPlayer: { videoId: string; title?: string; thumbnailUrl?: string };
   ChannelDetail: { channelId: string };
   ChildChannelDetail: { channelId: string };
   AddVideo: undefined;
@@ -22,11 +22,27 @@ export type RootStackParamList = {
   ParentLibrary: undefined;
   Subscription: undefined;
   AppBlocking: undefined;
+  MovieDetail: {
+    tmdbId: number;
+    title?: string;
+    mediaType?: 'movie' | 'tv';
+    queueIds?: number[];
+    queueTypes?: Array<'movie' | 'tv'>;
+  };
+  MovieTrailerPlayer: {
+    tmdbId: number;
+    title: string;
+    trailerYoutubeId: string;
+    mediaType?: 'movie' | 'tv';
+    queueIds?: number[];
+    queueTypes?: Array<'movie' | 'tv'>;
+  };
 };
 
 export type ParentTabParamList = {
   Dashboard: undefined;
   Discover: undefined;
+  Movies: undefined;
   Profiles: undefined;
   Settings: undefined;
 };

@@ -6,7 +6,14 @@ type AppNav = NavigationProp<RootStackParamList>;
 
 export function openChildVideo(
   navigation: AppNav,
-  video: { id: string; contentType?: ContentType; channelId?: string },
+  video: {
+    id: string;
+    contentType?: ContentType;
+    channelId?: string;
+    title?: string;
+    thumbnail?: string;
+    thumbnailUrl?: string;
+  },
   options?: { channelId?: string },
 ) {
   if (video.contentType === 'SHORT') {
@@ -19,13 +26,24 @@ export function openChildVideo(
     });
     return;
   }
-  navigation.navigate('VideoPlayer', { videoId: video.id });
+  navigation.navigate('VideoPlayer', {
+    videoId: video.id,
+    title: video.title,
+    thumbnailUrl: video.thumbnailUrl ?? video.thumbnail,
+  });
 }
 
 /** Route by content type — shorts always open in the vertical feed (child). */
 export function openVideoContent(
   navigation: AppNav,
-  video: { id: string; contentType?: ContentType; channelId?: string },
+  video: {
+    id: string;
+    contentType?: ContentType;
+    channelId?: string;
+    title?: string;
+    thumbnail?: string;
+    thumbnailUrl?: string;
+  },
   role: 'parent' | 'child' | null | undefined,
   options?: { channelId?: string },
 ) {
@@ -33,5 +51,9 @@ export function openVideoContent(
     openChildVideo(navigation, video, options);
     return;
   }
-  navigation.navigate('VideoPlayer', { videoId: video.id });
+  navigation.navigate('VideoPlayer', {
+    videoId: video.id,
+    title: video.title,
+    thumbnailUrl: video.thumbnailUrl ?? video.thumbnail,
+  });
 }

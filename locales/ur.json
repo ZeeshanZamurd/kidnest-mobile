@@ -200,6 +200,8 @@
   "badges": "بیجز",
   "safe_mode": "سیف موڈ آن",
   "learning_fun": "سیکھنا مزہ دار ہے!",
+  "child_hi_name": "ہیلو، {{name}}!",
+  "switch_profile": "پروفائل بدلیں",
   "onboarding_1_title": "والدین کا کنٹرول",
   "onboarding_1_desc": "آپ ہر چینل اور ویڈیو منظور کرتے ہیں۔ بچے صرف اجازت یافتہ دیکھتے ہیں۔",
   "onboarding_2_title": "بغیر اشتہار",

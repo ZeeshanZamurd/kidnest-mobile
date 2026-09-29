@@ -29,9 +29,10 @@ import { normalizeCategory } from '../../utils/videoMapper';
 import VideoDetailPanel from '../../components/video/VideoDetailPanel';
 import VideoPlayerOverlay from '../../components/video/player/VideoPlayerOverlay';
 import VideoPosterLoader from '../../components/video/player/VideoPosterLoader';
-import PlayerVideoShelf from '../../components/video/player/PlayerVideoShelf';
+import PlayerEndOverlay from '../../components/video/player/PlayerEndOverlay';
 import { playerTheme } from '../../components/video/player/playerTheme';
 import { BRAND_PRIMARY } from '../../constants/branding';
+import { useTheme } from '../../context/ThemeContext';
 import type { RootStackParamList } from '../../navigation/types';
 import { markPlaybackStarted, shouldShowVideoBuffering } from '../../utils/videoBuffering';
 import { buildCachedVideoSource } from '../../services/cache/videoCache';
@@ -47,6 +48,7 @@ const VIDEO_BUFFER_CONFIG = {
   bufferForPlaybackAfterRebufferMs: 5_000,
 };
 const PREFERRED_FORWARD_BUFFER_SECONDS = 60;
+const AUTOPLAY_COUNTDOWN_SECS = 5;
 
 type Route = RouteProp<RootStackParamList, 'VideoPlayer'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -63,11 +65,14 @@ function resolveWatchUrl(video: VideoDetail): string | null {
 
 export default function VideoPlayerScreen() {
   const { t } = useTranslation();
+  const { colors } = useTheme();
   const route = useRoute<Route>();
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const videoHeight = Math.round(windowWidth * (9 / 16));
+  const previewTitle = route.params.title;
+  const previewThumb = route.params.thumbnailUrl;
   const role = useAppStore((s) => s.role);
   const activeChildId = useAppStore((s) => s.activeChildId);
   const autoplayEnabled = useAppStore((s) => s.autoplayEnabled);
@@ -82,13 +87,15 @@ export default function VideoPlayerScreen() {
   const [immersiveFullscreen, setImmersiveFullscreen] = useState(false);
   const [playbackTime, setPlaybackTime] = useState({ current: 0, duration: 0 });
   const [video, setVideo] = useState<VideoDetail | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSeeking, setIsSeeking] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [hasDisplayedFrame, setHasDisplayedFrame] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [isStalled, setIsStalled] = useState(false);
   const [bufferedSecs, setBufferedSecs] = useState(0);
+  const [playbackEnded, setPlaybackEnded] = useState(false);
+  const [countdownSecs, setCountdownSecs] = useState<number | null>(null);
   const progressRef = useRef({ current: 0, duration: 0 });
   const videoRef = useRef<VideoRef>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -96,10 +103,15 @@ export default function VideoPlayerScreen() {
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedVideoIdRef = useRef<string | null>(null);
   const qualityChangeRef = useRef(false);
+  const lastProgressAtRef = useRef(Date.now());
   const [switchingVideo, setSwitchingVideo] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
   const [qualityMenuVisible, setQualityMenuVisible] = useState(false);
   const [shelfVisible, setShelfVisible] = useState(false);
+
+  const clearCountdown = useCallback(() => {
+    setCountdownSecs(null);
+  }, []);
 
   const flushProgress = useCallback(() => {
     if (role !== 'child' || !activeChildId || !video) return;
@@ -125,12 +137,15 @@ export default function VideoPlayerScreen() {
     loadedVideoIdRef.current = null;
     setHasDisplayedFrame(false);
     setIsBuffering(true);
+    setIsStalled(false);
     setBufferedSecs(0);
     setIsSeeking(false);
     setControlsVisible(true);
     setSelectedQuality(null);
     setQualityMenuVisible(false);
     setShelfVisible(false);
+    setPlaybackEnded(false);
+    setCountdownSecs(null);
     clearHideControlsTimer();
   }, [clearHideControlsTimer]);
 
@@ -161,8 +176,8 @@ export default function VideoPlayerScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     setError('');
+    setVideo(null);
     resetPlayback();
     void fetchVideoById(route.params.videoId)
       .then((v) => {
@@ -170,9 +185,6 @@ export default function VideoPlayerScreen() {
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load video');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -196,8 +208,14 @@ export default function VideoPlayerScreen() {
   }, [clearHideControlsTimer]);
 
   const revealControls = useCallback(() => setControlsVisible(true), []);
+  const hideControls = useCallback(() => setControlsVisible(false), []);
 
   useEffect(() => {
+    if (playbackEnded) {
+      clearHideControlsTimer();
+      setControlsVisible(false);
+      return;
+    }
     if (paused || isSeeking || (immersiveFullscreen && shelfVisible)) {
       revealControls();
       clearHideControlsTimer();
@@ -211,6 +229,7 @@ export default function VideoPlayerScreen() {
     shelfVisible,
     immersiveFullscreen,
     controlsVisible,
+    playbackEnded,
     revealControls,
     clearHideControlsTimer,
     scheduleHideControls,
@@ -305,6 +324,8 @@ export default function VideoPlayerScreen() {
 
   const goToVideo = useCallback(
     (videoId: string, contentType?: VideoDetail['contentType']) => {
+      clearCountdown();
+      setPlaybackEnded(false);
       if (contentType === 'SHORT' && role === 'child') {
         navigation.replace('ChildTabs', {
           screen: 'ChildFeed',
@@ -314,19 +335,62 @@ export default function VideoPlayerScreen() {
       }
       void loadVideo(videoId);
     },
-    [loadVideo, navigation, role, video?.channelId],
+    [clearCountdown, loadVideo, navigation, role, video?.channelId],
   );
-
-  const shouldAutoplayNext = autoplayEnabled && role === 'child' && Boolean(nextVideo);
 
   const handleVideoEnd = useCallback(() => {
     flushProgress();
-    if (shouldAutoplayNext && nextVideo) {
-      goToVideo(nextVideo.id, nextVideo.contentType);
+    setPaused(true);
+    if (role === 'child') {
+      setPlaybackEnded(true);
+      setControlsVisible(false);
+      clearHideControlsTimer();
+      if (autoplayEnabled && nextVideo) {
+        setCountdownSecs(AUTOPLAY_COUNTDOWN_SECS);
+      }
       return;
     }
-    setPaused(true);
-  }, [flushProgress, shouldAutoplayNext, nextVideo, goToVideo]);
+  }, [
+    flushProgress,
+    role,
+    autoplayEnabled,
+    nextVideo,
+    clearHideControlsTimer,
+  ]);
+
+  useEffect(() => {
+    if (countdownSecs == null) return;
+    if (countdownSecs <= 0) {
+      clearCountdown();
+      if (nextVideo) {
+        goToVideo(nextVideo.id, nextVideo.contentType);
+      }
+      return;
+    }
+    const id = setTimeout(() => {
+      setCountdownSecs((s) => (s == null ? null : s - 1));
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [countdownSecs, nextVideo, goToVideo, clearCountdown]);
+
+  useEffect(() => {
+    if (!isBuffering || paused || !hasDisplayedFrame || playbackEnded) {
+      setIsStalled(false);
+      return;
+    }
+    const id = setInterval(() => {
+      setIsStalled(Date.now() - lastProgressAtRef.current > 450);
+    }, 200);
+    return () => clearInterval(id);
+  }, [isBuffering, paused, hasDisplayedFrame, playbackEnded]);
+
+  const replayVideo = useCallback(() => {
+    clearCountdown();
+    setPlaybackEnded(false);
+    seekTo(0);
+    setPaused(false);
+    setControlsVisible(true);
+  }, [clearCountdown, seekTo]);
 
   const openChannel = () => {
     if (!video) return;
@@ -413,20 +477,50 @@ export default function VideoPlayerScreen() {
   }, [role, activeChildId, video, paused, streamUri, flushProgress]);
 
   if (!video) {
-    if (loading) {
-      return (
-        <LinearGradient colors={['#F7F4FF', '#FFF9FC']} style={styles.loading}>
-          <ActivityIndicator color={BRAND_PRIMARY} size="large" />
-        </LinearGradient>
-      );
-    }
+    const screenColors = [colors.background, colors.backgroundSecondary, colors.background] as const;
     return (
-      <LinearGradient colors={['#F7F4FF', '#FFF9FC']} style={styles.loading}>
-        <Text style={styles.errText}>{error || 'Video not found'}</Text>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.backLink}>{t('go_back')}</Text>
-        </Pressable>
-      </LinearGradient>
+      <View style={[styles.screen, { backgroundColor: colors.background }]}>
+        <LinearGradient
+          colors={[...screenColors]}
+          locations={[0, 0.5, 1]}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <View style={[styles.header, { paddingTop: insets.top }]}>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={[styles.headerBack, { backgroundColor: colors.surface }]}
+          >
+            <Icon name="chevron-back" size={24} color={colors.text} />
+          </Pressable>
+        </View>
+        <View style={[styles.playerWrap, { height: videoHeight + 8 }]}>
+          <View style={styles.playerFrame}>
+            {previewThumb ? (
+              <VideoPosterLoader thumbnailUrl={previewThumb} />
+            ) : (
+              <View style={styles.inlineLoader}>
+                <ActivityIndicator color="#fff" size="large" />
+              </View>
+            )}
+          </View>
+        </View>
+        {previewTitle ? (
+          <View style={styles.previewMeta}>
+            <Text style={[styles.previewTitle, { color: colors.text }]} numberOfLines={2}>
+              {previewTitle}
+            </Text>
+          </View>
+        ) : null}
+        {error ? (
+          <View style={styles.previewError}>
+            <Text style={[styles.errText, { color: colors.text }]}>{error}</Text>
+            <Pressable onPress={() => navigation.goBack()}>
+              <Text style={[styles.backLink, { color: colors.primary }]}>{t('go_back')}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
     );
   }
 
@@ -437,7 +531,7 @@ export default function VideoPlayerScreen() {
   const showBuffering = shouldShowVideoBuffering(
     hasDisplayedFrame,
     isBuffering,
-    playbackTime.current,
+    isStalled,
   );
   const showPoster =
     Boolean(video.thumbnailUrl) && (!hasDisplayedFrame || switchingVideo);
@@ -482,9 +576,9 @@ export default function VideoPlayerScreen() {
           bufferConfig={VIDEO_BUFFER_CONFIG}
           preferredForwardBufferDuration={PREFERRED_FORWARD_BUFFER_SECONDS}
           onProgress={(e) => {
+            lastProgressAtRef.current = Date.now();
             if (markPlaybackStarted(e.currentTime)) {
               setHasDisplayedFrame(true);
-              setIsBuffering(false);
             }
             if (e.playableDuration > 0) setBufferedSecs(e.playableDuration);
             if (isSeeking) return;
@@ -500,14 +594,17 @@ export default function VideoPlayerScreen() {
             loadedVideoIdRef.current = video.id;
             progressRef.current = { current, duration: d };
             setPlaybackTime({ current, duration: d });
+            setPaused(false);
           }}
           onEnd={handleVideoEnd}
           onBuffer={(e) => {
-            if (progressRef.current.current <= 0.25) setIsBuffering(e.isBuffering);
+            setIsBuffering(e.isBuffering);
           }}
           onReadyForDisplay={() => {
             setHasDisplayedFrame(true);
             setIsBuffering(false);
+            setIsStalled(false);
+            setPaused(false);
           }}
           onLoadStart={() => {
             setHasDisplayedFrame(false);
@@ -539,6 +636,7 @@ export default function VideoPlayerScreen() {
           onTogglePlay={() => setPaused((p) => !p)}
           onPlay={() => setPaused(false)}
           onRevealControls={revealControls}
+          onHideControls={hideControls}
           onPrev={
             prevVideo
               ? () => goToVideo(prevVideo.id, prevVideo.contentType)
@@ -575,16 +673,57 @@ export default function VideoPlayerScreen() {
             goToVideo(id, picked?.contentType);
           }}
           hasPosterLoader={showPoster}
+          playbackEnded={playbackEnded && role === 'child'}
+          endOverlay={
+            playbackEnded && role === 'child' ? (
+              <PlayerEndOverlay
+                nextVideo={nextVideo}
+                suggestions={shelfVideos}
+                countdownSecs={countdownSecs}
+                autoplayEnabled={autoplayEnabled}
+                labels={{
+                  upNext: t('up_next'),
+                  playingIn: t('playing_in_seconds', {
+                    defaultValue: 'Playing in {n}…',
+                  }),
+                  cancel: t('cancel', { defaultValue: 'Cancel' }),
+                  suggested: t('suggested_for_you'),
+                  replay: t('replay', { defaultValue: 'Replay' }),
+                }}
+                onPlayNext={() => {
+                  if (nextVideo) goToVideo(nextVideo.id, nextVideo.contentType);
+                }}
+                onCancelAutoplay={clearCountdown}
+                onSelectVideo={(id) => {
+                  const picked =
+                    shelfVideos.find((v) => v.id === id) ??
+                    suggestedVideos.find((v) => v.id === id);
+                  goToVideo(id, picked?.contentType);
+                }}
+                onReplay={replayVideo}
+              />
+            ) : null
+          }
         />
       </View>
     );
   };
 
   return (
-    <View style={[styles.screen, useShortLayout && !immersiveFullscreen && styles.screenShort]}>
+    <View
+      style={[
+        styles.screen,
+        { backgroundColor: useShortLayout ? '#000' : colors.background },
+        useShortLayout && !immersiveFullscreen && styles.screenShort,
+      ]}
+    >
       {!immersiveFullscreen ? (
         <LinearGradient
-          colors={useShortLayout ? ['#000', '#000', '#000'] : ['#F7F4FF', '#FFF9FC', '#F7F4FF']}
+          colors={
+            useShortLayout
+              ? ['#000', '#000', '#000']
+              : [colors.background, colors.backgroundSecondary, colors.background]
+          }
           locations={[0, 0.5, 1]}
           style={StyleSheet.absoluteFillObject}
           pointerEvents="none"
@@ -593,8 +732,22 @@ export default function VideoPlayerScreen() {
 
       {!immersiveFullscreen ? (
         <View style={[styles.header, { paddingTop: insets.top }, useShortLayout && styles.headerShort]}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.headerBack}>
-            <Icon name="chevron-back" size={24} color={useShortLayout ? '#fff' : '#4A3278'} />
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={[
+              styles.headerBack,
+              {
+                backgroundColor: useShortLayout
+                  ? 'rgba(255,255,255,0.18)'
+                  : colors.surface,
+              },
+            ]}
+          >
+            <Icon
+              name="chevron-back"
+              size={24}
+              color={useShortLayout ? '#fff' : colors.text}
+            />
           </Pressable>
         </View>
       ) : null}
@@ -607,22 +760,6 @@ export default function VideoPlayerScreen() {
       >
         {renderPlayer()}
       </View>
-
-      {!immersiveFullscreen && role === 'child' && shelfVideos.length > 0 ? (
-        <PlayerVideoShelf
-          variant="inline"
-          title={t('suggested_for_you')}
-          videos={shelfVideos}
-          currentVideoId={video.id}
-          onSelectVideo={(id) => {
-            const picked =
-              shelfVideos.find((v) => v.id === id) ??
-              suggestedVideos.find((v) => v.id === id) ??
-              (nextVideo?.id === id ? nextVideo : null);
-            goToVideo(id, picked?.contentType);
-          }}
-        />
-      ) : null}
 
       {!immersiveFullscreen ? (
         <ScrollView
@@ -641,8 +778,8 @@ export default function VideoPlayerScreen() {
             isChannelFavorite={video.channelId ? isChannelFavorite(video.channelId) : false}
             hasChannel={Boolean(video.channelId)}
             nextVideo={nextVideo}
-            showUpNext={Boolean(nextVideo && autoplayEnabled)}
-            suggestedVideos={role === 'child' && shelfVideos.length > 0 ? [] : suggestedVideos}
+            showUpNext={Boolean(role === 'child' && nextVideo && !playbackEnded)}
+            suggestedVideos={role === 'child' ? suggestedVideos : []}
             labels={{
               favorites: t('favorites'),
               channels: t('favorite_channels'),
@@ -690,7 +827,27 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.75)',
+  },
+  inlineLoader: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0F0A1F',
+  },
+  previewMeta: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  previewTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  previewError: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    alignItems: 'center',
+    gap: 12,
   },
   playerWrap: {
     justifyContent: 'center',

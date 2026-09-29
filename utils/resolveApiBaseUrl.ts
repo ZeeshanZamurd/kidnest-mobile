@@ -3,6 +3,9 @@ import { API_DOMAIN, API_DOMAIN_USE_HTTPS, API_PORT, API_PREFIX, API_URL } from 
 import { DEV_HOST_IP } from '../config/dev-host.generated';
 import { getMetroDevHost } from './getMetroDevHost';
 
+/** Live API — always used for release / TestFlight / Play Store builds. */
+export const PRODUCTION_API_URL = 'https://api.kido-nest.fun/api';
+
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
@@ -18,19 +21,15 @@ function buildFromHost(host: string): string {
 }
 
 /**
- * Resolves API base URL:
- * 1. API_URL if set
- * 2. API_DOMAIN if set
- * 3. Android USB: localhost via `adb reverse tcp:3010 tcp:3010` (most reliable)
- * 4. Metro LAN host (same Wi‑Fi)
- * 5. Generated LAN IP from detect-host script
- * 6. Android emulator host loopback (10.0.2.2)
- * 7. localhost (iOS simulator fallback)
- *
- * Prefer USB reverse over Metro LAN — office Wi‑Fi often blocks phone→Mac:3010
- * even when Metro bundles load.
+ * Release builds always use the production API (no localhost / adb / Metro).
+ * Dev builds: API_URL if set, else local Nest discovery.
  */
 export function resolveApiBaseUrl(): string {
+  // Production / release: hard-wired — never fall back to device localhost.
+  if (!__DEV__) {
+    return PRODUCTION_API_URL;
+  }
+
   const explicitUrl = API_URL.trim();
   if (explicitUrl) {
     return trimTrailingSlash(explicitUrl);
@@ -41,13 +40,8 @@ export function resolveApiBaseUrl(): string {
     return buildFromDomain(domain);
   }
 
-  // Physical Android / emulator with `adb reverse`: device localhost → host Nest
-  if (Platform.OS === 'android' && __DEV__) {
-    const usbUrl = buildFromHost('localhost');
-    if (__DEV__) {
-      console.log('[KidNest API] Using Android localhost (adb reverse):', usbUrl);
-    }
-    return usbUrl;
+  if (Platform.OS === 'android') {
+    return buildFromHost('localhost');
   }
 
   const metroHost = getMetroDevHost();
@@ -57,35 +51,19 @@ export function resolveApiBaseUrl(): string {
     metroHost !== '127.0.0.1' &&
     metroHost !== '10.0.2.2'
   ) {
-    const url = buildFromHost(metroHost);
-    if (__DEV__) {
-      console.log('[KidNest API] Using Metro host:', url);
-    }
-    return url;
+    return buildFromHost(metroHost);
   }
 
   const generatedHost = DEV_HOST_IP?.trim();
   if (generatedHost && generatedHost !== '127.0.0.1') {
-    const url = buildFromHost(generatedHost);
-    if (__DEV__) {
-      console.log('[KidNest API] Using detected LAN IP:', url);
-    }
-    return url;
+    return buildFromHost(generatedHost);
   }
 
   if (Platform.OS === 'android') {
-    const emulatorUrl = buildFromHost('10.0.2.2');
-    if (__DEV__) {
-      console.log('[KidNest API] Using Android emulator host:', emulatorUrl);
-    }
-    return emulatorUrl;
+    return buildFromHost('10.0.2.2');
   }
 
-  const fallback = buildFromHost('localhost');
-  if (__DEV__) {
-    console.log('[KidNest API] Fallback:', fallback);
-  }
-  return fallback;
+  return buildFromHost('localhost');
 }
 
 /** Call after changing API config at runtime (rare). */

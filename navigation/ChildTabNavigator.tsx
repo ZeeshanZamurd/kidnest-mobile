@@ -13,6 +13,7 @@ import { useChildTabBarStyle } from './tabBarOptions';
 import { useChildFavorites } from '../hooks/useChildFavorites';
 import { useAppBlockEnforcement } from '../hooks/useAppBlockEnforcement';
 import { useAppStore } from '../store/useAppStore';
+import { childTapHaptic } from '../utils/childHaptics';
 import type { ChildTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<ChildTabParamList>();
@@ -20,14 +21,14 @@ const Tab = createBottomTabNavigator<ChildTabParamList>();
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
   const style = useAnimatedStyle(
     () => ({
-      transform: [{ scale: withSpring(focused ? 1.2 : 1) }],
+      transform: [{ scale: withSpring(focused ? 1.22 : 1, { damping: 14, stiffness: 220 }) }],
     }),
     [focused],
   );
 
   return (
     <Animated.View style={style}>
-      <Icon name={focused ? name : `${name}-outline`} size={26} color={color} />
+      <Icon name={focused ? name : `${name}-outline`} size={28} color={color} />
       {focused && <View style={[styles.dot, { backgroundColor: color }]} />}
     </Animated.View>
   );
@@ -47,8 +48,19 @@ export default function ChildTabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.childPrimary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '700' },
+        tabBarStyle: {
+          ...tabBarStyle,
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          overflow: 'hidden',
+        },
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '800' },
+        tabBarHideOnKeyboard: true,
+      }}
+      screenListeners={{
+        tabPress: () => {
+          childTapHaptic('select');
+        },
       }}
     >
       <Tab.Screen
@@ -59,6 +71,7 @@ export default function ChildTabNavigator() {
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="home" focused={focused} color={color} />
           ),
+          tabBarAccessibilityLabel: t('home'),
         }}
       />
       <Tab.Screen
@@ -69,6 +82,7 @@ export default function ChildTabNavigator() {
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="play" focused={focused} color={color} />
           ),
+          tabBarAccessibilityLabel: t('feed'),
         }}
       />
       <Tab.Screen
@@ -79,6 +93,7 @@ export default function ChildTabNavigator() {
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="time" focused={focused} color={color} />
           ),
+          tabBarAccessibilityLabel: t('history'),
         }}
       />
       <Tab.Screen
@@ -89,6 +104,7 @@ export default function ChildTabNavigator() {
           tabBarIcon: ({ focused, color }) => (
             <TabIcon name="heart" focused={focused} color={color} />
           ),
+          tabBarAccessibilityLabel: t('favorites'),
         }}
       />
     </Tab.Navigator>

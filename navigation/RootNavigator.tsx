@@ -20,6 +20,7 @@ import ParentLibraryScreen from '../screens/Parent/ParentLibraryScreen';
 import SubscriptionScreen from '../screens/Parent/SubscriptionScreen';
 import AppBlockingScreen from '../screens/Parent/AppBlockingScreen';
 import { useAppStore } from '../store/useAppStore';
+import { useTheme } from '../context/ThemeContext';
 import { initAppBlockPermissionWatcher } from '../services/appBlockPermission';
 import type { RootStackParamList } from './types';
 
@@ -40,6 +41,7 @@ function OnboardingRoute() {
 }
 
 export default function RootNavigator() {
+  const { colors } = useTheme();
   const hasOnboarded = useAppStore((s) => s.hasOnboarded);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const parentSession = useAppStore((s) => s.parentSession);
@@ -77,7 +79,11 @@ export default function RootNavigator() {
       <Stack.Screen
         name="VideoPlayer"
         getComponent={() => require('../screens/Shared/VideoPlayerScreen').default}
-        options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+        options={{
+          animation: 'slide_from_bottom',
+          presentation: 'fullScreenModal',
+          contentStyle: { backgroundColor: colors.background },
+        }}
       />
       <Stack.Screen name="AddVideo" component={AddVideoScreen} options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="AddChild" component={AddChildScreen} options={{ animation: 'slide_from_right' }} />
@@ -108,6 +114,20 @@ export default function RootNavigator() {
         name="ChildChannelDetail"
         getComponent={() => require('../screens/Child/ChildChannelDetailScreen').default}
         options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="MovieDetail"
+        getComponent={() => require('../screens/Parent/MovieDetailScreen').default}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="MovieTrailerPlayer"
+        getComponent={() => require('../screens/Parent/MovieTrailerPlayerScreen').default}
+        options={{
+          animation: 'slide_from_bottom',
+          presentation: 'fullScreenModal',
+          contentStyle: { backgroundColor: '#000' },
+        }}
       />
     </Stack.Navigator>
   );

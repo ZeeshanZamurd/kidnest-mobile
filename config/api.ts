@@ -1,12 +1,17 @@
 /**
  * API endpoint configuration.
  *
- * Production: set API_URL or API_DOMAIN below.
- * Development: leave both empty — the app uses Metro's connected host IP automatically.
+ * Release builds (!__DEV__) always use https://api.kido-nest.fun/api
+ * (see resolveApiBaseUrl) — these values are ignored in production builds.
+ *
+ * Local Metro (__DEV__): leave API_URL and API_DOMAIN empty so the app uses
+ * adb reverse / LAN Nest on :3010.
+ * To hit production from Metro temporarily, set:
+ *   API_URL = 'https://api.kido-nest.fun/api'
  */
 export const API_URL = '';
 
-/** Host only, e.g. api.kido-nest.fun — used when API_URL is empty. */
+/** Host only — used when API_URL is empty (dev). Leave empty for local Nest. */
 export const API_DOMAIN = '';
 
 /** Use https when API_DOMAIN is set (set false for local domain testing). */

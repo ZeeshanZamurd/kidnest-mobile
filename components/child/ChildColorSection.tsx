@@ -1,10 +1,10 @@
 import React from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import LinearGradient from 'react-native-linear-gradient';
 import ChildKidVideoCard from './ChildKidVideoCard';
 import type { ChildSectionTheme } from './categoryThemes';
 import type { Video } from '../../types';
+import { useTheme } from '../../context/ThemeContext';
 
 type Props = {
   title: string;
@@ -15,7 +15,7 @@ type Props = {
   horizontal?: boolean;
 };
 
-/** Color-blocked content row — icon-only header, no reading required for navigation. */
+/** Simple shelf header + video row/grid — follows app light/dark theme. */
 export default function ChildColorSection({
   title,
   theme,
@@ -25,15 +25,18 @@ export default function ChildColorSection({
   horizontal = false,
 }: Props) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
 
   if (videos.length === 0) return null;
 
   return (
     <View style={styles.section}>
-      <LinearGradient colors={theme.gradient} style={styles.header}>
+      <View style={styles.header}>
         <Text style={styles.headerEmoji}>{theme.emoji}</Text>
-        <Text style={styles.headerTitle}>{title || t(theme.labelKey)}</Text>
-      </LinearGradient>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          {title || t(theme.labelKey)}
+        </Text>
+      </View>
 
       {horizontal ? (
         <FlatList
@@ -73,31 +76,21 @@ export default function ChildColorSection({
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   header: {
     marginHorizontal: 16,
-    borderRadius: 22,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-    shadowColor: '#7B4DFF',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    gap: 8,
   },
   headerEmoji: {
-    fontSize: 28,
+    fontSize: 18,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: 0.3,
+    fontSize: 17,
+    fontWeight: '800',
   },
   grid: {
     flexDirection: 'row',
@@ -107,9 +100,9 @@ const styles = StyleSheet.create({
   },
   horizontalList: {
     paddingHorizontal: 16,
-    gap: 12,
   },
   horizontalItem: {
-    width: 180,
+    width: 152,
+    marginRight: 12,
   },
 });

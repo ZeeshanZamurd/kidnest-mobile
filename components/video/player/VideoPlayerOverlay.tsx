@@ -41,6 +41,7 @@ type Props = {
   onTogglePlay: () => void;
   onPlay: () => void;
   onRevealControls: () => void;
+  onHideControls: () => void;
   onPrev?: () => void;
   onNext?: () => void;
   onFullscreen: () => void;
@@ -58,6 +59,8 @@ type Props = {
   onToggleShelf: () => void;
   onSelectShelfVideo: (videoId: string) => void;
   hasPosterLoader: boolean;
+  playbackEnded?: boolean;
+  endOverlay?: React.ReactNode;
 };
 
 export default function VideoPlayerOverlay({
@@ -84,6 +87,7 @@ export default function VideoPlayerOverlay({
   onTogglePlay,
   onPlay,
   onRevealControls,
+  onHideControls,
   onPrev,
   onNext,
   onFullscreen,
@@ -101,6 +105,8 @@ export default function VideoPlayerOverlay({
   onToggleShelf,
   onSelectShelfVideo,
   hasPosterLoader,
+  playbackEnded = false,
+  endOverlay = null,
 }: Props) {
   const controlsOpacity = useSharedValue(1);
   const centerScale = useSharedValue(0.9);
@@ -111,10 +117,19 @@ export default function VideoPlayerOverlay({
   }, [controlsVisible, controlsOpacity]);
 
   useEffect(() => {
-    const showCenter = paused && hasDisplayedFrame && !isBuffering && !controlsVisible;
+    const showCenter =
+      paused && hasDisplayedFrame && !isBuffering && !controlsVisible && !playbackEnded;
     centerOpacity.value = withTiming(showCenter ? 1 : 0, { duration: 200 });
     centerScale.value = withSpring(showCenter ? 1 : 0.88, { damping: 14, stiffness: 260 });
-  }, [paused, hasDisplayedFrame, isBuffering, controlsVisible, centerOpacity, centerScale]);
+  }, [
+    paused,
+    hasDisplayedFrame,
+    isBuffering,
+    controlsVisible,
+    playbackEnded,
+    centerOpacity,
+    centerScale,
+  ]);
 
   const controlsStyle = useAnimatedStyle(() => ({ opacity: controlsOpacity.value }));
   const centerStyle = useAnimatedStyle(() => ({
@@ -133,6 +148,7 @@ export default function VideoPlayerOverlay({
   const chromeBottom = dockHeight + qualityHeight + shelfHeight;
 
   const handleVideoTap = () => {
+    if (playbackEnded) return;
     if (shelfInOverlay && shelfVideos.length > 0) {
       if (!controlsVisible) {
         onRevealControls();
@@ -142,15 +158,18 @@ export default function VideoPlayerOverlay({
       onToggleShelf();
       return;
     }
-    if (controlsVisible) onTogglePlay();
+    // YouTube-style: tap toggles chrome, not play/pause
+    if (controlsVisible) onHideControls();
     else onRevealControls();
   };
 
   return (
     <>
-      {(switchingVideo || (isBuffering && !hasDisplayedFrame)) && !hasPosterLoader ? (
+      {(switchingVideo || isBuffering) && !hasPosterLoader && !playbackEnded ? (
         <PlayerBufferingOverlay />
       ) : null}
+
+      {playbackEnded && endOverlay ? endOverlay : null}
 
       <Animated.View style={[styles.centerPlay, centerStyle]} pointerEvents="box-none">
         <Pressable onPress={onPlay} accessibilityLabel="Play">
@@ -165,7 +184,7 @@ export default function VideoPlayerOverlay({
         onPress={handleVideoTap}
       />
 
-      {shelfInOverlay && shelfVisible && shelfVideos.length > 0 ? (
+      {shelfInOverlay && shelfVisible && shelfVideos.length > 0 && !playbackEnded ? (
         <View
           style={[
             styles.shelfLayer,
@@ -183,7 +202,7 @@ export default function VideoPlayerOverlay({
         </View>
       ) : null}
 
-      {duration > 0 && controlsVisible ? (
+      {duration > 0 && controlsVisible && !playbackEnded ? (
         <View style={styles.dockLayer} pointerEvents="box-none">
           <VideoControlsDock
             paused={paused}
@@ -206,7 +225,7 @@ export default function VideoPlayerOverlay({
         </View>
       ) : null}
 
-      {duration > 0 && !controlsVisible ? (
+      {duration > 0 && !controlsVisible && !playbackEnded ? (
         <View style={styles.miniLayer} pointerEvents="none">
           <View style={styles.miniTrack}>
             <View style={[styles.miniBuffer, { width: `${buffered * 100}%` }]} />

@@ -55,27 +55,35 @@ export function getHomeSuggestedVideos(
 ): Video[] {
   const exclude = new Set(excludeIds);
   const pool = feedVideos.filter((v) => !exclude.has(v.id));
-  const byCategory = new Map<string, Video[]>();
-  for (const v of pool) {
-    const list = byCategory.get(v.category) ?? [];
-    list.push(v);
-    byCategory.set(v.category, list);
-  }
-  const categories = [...byCategory.keys()];
-  if (categories.length === 0) return [];
+  return buildMixedForYouFeed(pool).slice(0, limit);
+}
 
+/**
+ * For You ordering: newest first, then interleave so consecutive
+ * items prefer different channels (avoids channel-wise clumps).
+ */
+export function buildMixedForYouFeed(feedVideos: Video[]): Video[] {
+  if (feedVideos.length <= 1) return [...feedVideos];
+
+  const sorted = [...feedVideos].sort((a, b) => {
+    const aTime = Date.parse(a.publishedAt) || 0;
+    const bTime = Date.parse(b.publishedAt) || 0;
+    return bTime - aTime;
+  });
+
+  const remaining = [...sorted];
   const result: Video[] = [];
-  let round = 0;
-  while (result.length < limit && round < pool.length) {
-    for (const cat of categories) {
-      const list = byCategory.get(cat)!;
-      if (round < list.length) {
-        result.push(list[round]!);
-        if (result.length >= limit) break;
-      }
-    }
-    round++;
+  let lastChannelId: string | null = null;
+
+  while (remaining.length > 0) {
+    let idx = remaining.findIndex((v) => v.channelId && v.channelId !== lastChannelId);
+    if (idx < 0) idx = 0;
+    const [picked] = remaining.splice(idx, 1);
+    if (!picked) break;
+    result.push(picked);
+    lastChannelId = picked.channelId || null;
   }
+
   return result;
 }
 
